@@ -268,3 +268,69 @@ func TestNestedMessage(t *testing.T) {
 		})
 	}
 }
+
+func TestDuplicateFieldnameFoo(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []FooOption
+		want *Foo
+	}{
+		{
+			name: "Set ID",
+			opts: []FooOption{
+				WithIdForFoo(30),
+			},
+			want: &Foo{
+				Id: proto.Int32(30),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewFoo(tt.opts...)
+			if diff := cmp.Diff(got, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
+				t.Errorf("NewBasicMessage() (-want +got):\n%s", diff)
+			}
+
+			existing := &Foo{}
+			ApplyFooOptions(existing, tt.opts...)
+			if diff := cmp.Diff(existing, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
+				t.Errorf("ApplyBasicMessageOptions() (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestDuplicateFieldnameBar(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []BarOption
+		want *Bar
+	}{
+		{
+			name: "Set ID",
+			opts: []BarOption{
+				WithIdForBar(30),
+			},
+			want: &Bar{
+				Id: proto.Int32(30),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewBar(tt.opts...)
+			if diff := cmp.Diff(got, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
+				t.Errorf("NewBasicMessage() (-want +got):\n%s", diff)
+			}
+
+			existing := &Bar{}
+			ApplyBarOptions(existing, tt.opts...)
+			if diff := cmp.Diff(existing, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
+				t.Errorf("ApplyBasicMessageOptions() (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

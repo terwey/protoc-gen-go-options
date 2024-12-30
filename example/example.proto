@@ -37,3 +37,14 @@ message ComplexMessage {
   repeated NestedMessage nested_list = 2;
   map<string, int32> metadata = 3;
 }
+
+// Larger protobuf projects will have messages with duplicate field names
+// This would cause a function name collision
+// The generator handles this by then generating WithIdForFoo and WithIdForBar
+message Foo {
+  int32 id = 1;
+}
+
+message Bar {
+  int32 id = 1;
+}

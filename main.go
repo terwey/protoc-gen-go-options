@@ -56,12 +56,15 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	g.P(")")
 	g.P()
 
+	// Collect all field names to detect shared ones
+	sharedFields := findSharedFieldNames(file.Messages)
+
 	for _, message := range file.Messages {
-		generateMessageOptions(g, message)
+		generateMessageOptions(g, message, sharedFields)
 	}
 }
 
-func generateMessageOptions(g *protogen.GeneratedFile, message *protogen.Message) {
+func generateMessageOptions(g *protogen.GeneratedFile, message *protogen.Message, sharedFields map[string]bool) {
 	messageName := message.GoIdent.GoName
 
 	// Generate NewMessage function
@@ -91,32 +94,38 @@ func generateMessageOptions(g *protogen.GeneratedFile, message *protogen.Message
 
 	// Generate option setters
 	for _, field := range message.Fields {
+		fieldName := field.GoName
+		optionName := fmt.Sprintf("With%s", fieldName)
+		if sharedFields[fieldName] {
+			optionName = fmt.Sprintf("With%sFor%s", fieldName, message.GoIdent.GoName)
+		}
+
 		if field.Oneof != nil && !field.Oneof.Desc.IsSynthetic() {
 			// Handle oneof fields
-			generateOneofOption(g, message, field)
+			generateOneofOptionWithName(g, message, field, optionName)
 		} else if field.Desc.IsList() {
 			// Handle repeated fields
-			generateRepeatedOption(g, message, field)
+			generateRepeatedOptionWithName(g, message, field, optionName)
 		} else {
 			// Handle regular fields
-			generateRegularOption(g, message, field)
+			generateRegularOptionWithName(g, message, field, optionName)
 		}
 	}
 }
 
-func generateRegularOption(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field) {
+func generateRegularOptionWithName(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
 	fieldName := field.GoName
 
 	// Handle map fields
 	if field.Desc.IsMap() {
-		generateMapOption(g, message, field)
+		generateMapOptionWithName(g, message, field, optionName)
 		return
 	}
 
 	// Handle other fields
 	fieldType := getGoTypeFromKind(g, field)
-	g.P(fmt.Sprintf("// With%s sets the %s field of %s.", fieldName, fieldName, message.GoIdent.GoName))
-	g.P(fmt.Sprintf("func With%s(value %s) %sOption {", fieldName, fieldType, message.GoIdent.GoName))
+	g.P(fmt.Sprintf("// %s sets the %s field of %s.", optionName, fieldName, message.GoIdent.GoName))
+	g.P(fmt.Sprintf("func %s(value %s) %sOption {", optionName, fieldType, message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 	if protoHelperFunc(field.Desc.Kind()) != "" {
 		g.P(fmt.Sprintf("\t\tm.%s = proto.%s(value)", fieldName, protoHelperFunc(field.Desc.Kind())))
@@ -128,28 +137,25 @@ func generateRegularOption(g *protogen.GeneratedFile, message *protogen.Message,
 	g.P()
 }
 
-func generateMapOption(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field) {
-	fieldName := field.GoName
+func generateMapOptionWithName(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
 	keyType := getBaseGoType(g, field.Message.Fields[0])
 	valueType := getBaseGoType(g, field.Message.Fields[1])
 	mapType := fmt.Sprintf("map[%s]%s", keyType, valueType)
-
-	g.P(fmt.Sprintf("// With%s sets the %s field of %s.", fieldName, fieldName, message.GoIdent.GoName))
-	g.P(fmt.Sprintf("func With%s(value %s) %sOption {", fieldName, mapType, message.GoIdent.GoName))
+	fieldName := field.GoName
+	g.P(fmt.Sprintf("// %s sets the %s field of %s.", optionName, fieldName, message.GoIdent.GoName))
+	g.P(fmt.Sprintf("func %s(value %s) %sOption {", optionName, mapType, message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\t\tm.%s = value", fieldName))
 	g.P("\t}")
 	g.P("}")
 	g.P()
-	return
 }
 
-func generateRepeatedOption(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field) {
+func generateRepeatedOptionWithName(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
+	fieldType := "[]" + getBaseGoType(g, field)
 	fieldName := field.GoName
-	fieldType := getGoTypeFromKind(g, field)
-
-	g.P(fmt.Sprintf("// With%s sets the %s field of %s.", fieldName, fieldName, message.GoIdent.GoName))
-	g.P(fmt.Sprintf("func With%s(values %s) %sOption {", fieldName, fieldType, message.GoIdent.GoName))
+	g.P(fmt.Sprintf("// %s sets the %s field of %s.", optionName, fieldName, message.GoIdent.GoName))
+	g.P(fmt.Sprintf("func %s(values %s) %sOption {", optionName, fieldType, message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\t\tm.%s = values", fieldName))
 	g.P("\t}")
@@ -157,12 +163,11 @@ func generateRepeatedOption(g *protogen.GeneratedFile, message *protogen.Message
 	g.P()
 }
 
-func generateOneofOption(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field) {
+func generateOneofOptionWithName(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
 	fieldName := field.GoName
 	wrapperType := message.GoIdent.GoName + "_" + field.GoName
-
-	g.P(fmt.Sprintf("// With%s sets the %s field of %s.", fieldName, fieldName, message.GoIdent.GoName))
-	g.P(fmt.Sprintf("func With%s(value %s) %sOption {", fieldName, getGoTypeFromKind(g, field), message.GoIdent.GoName))
+	g.P(fmt.Sprintf("// %s sets the %s field of %s.", optionName, fieldName, message.GoIdent.GoName))
+	g.P(fmt.Sprintf("func %s(value %s) %sOption {", optionName, getGoTypeFromKind(g, field), message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\t\tm.Choice = &%s{", wrapperType))
 	g.P(fmt.Sprintf("\t\t\t%s: value,", fieldName))
@@ -235,4 +240,26 @@ func protoHelperFunc(kind protoreflect.Kind) string {
 		// Bytes and messages do not use proto helper functions
 		return ""
 	}
+}
+
+func findSharedFieldNames(messages []*protogen.Message) map[string]bool {
+	fieldCount := make(map[string]int)
+	sharedFields := make(map[string]bool)
+
+	// Count field names
+	for _, message := range messages {
+		for _, field := range message.Fields {
+			fieldName := field.GoName
+			fieldCount[fieldName]++
+		}
+	}
+
+	// Mark shared fields
+	for name, count := range fieldCount {
+		if count > 1 {
+			sharedFields[name] = true
+		}
+	}
+
+	return sharedFields
 }

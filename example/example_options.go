@@ -189,3 +189,55 @@ func WithMetadata(value map[string]int32) ComplexMessageOption {
 		m.Metadata = value
 	}
 }
+
+// NewFoo creates a new Foo with the provided options.
+func NewFoo(opts ...FooOption) *Foo {
+	m := &Foo{}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// ApplyFooOptions applies the provided options to an existing Foo.
+func ApplyFooOptions(m *Foo, opts ...FooOption) {
+	for _, opt := range opts {
+		opt(m)
+	}
+}
+
+// FooOption defines a functional option for Foo.
+type FooOption func(*Foo)
+
+// WithIdForFoo sets the Id field of Foo.
+func WithIdForFoo(value int32) FooOption {
+	return func(m *Foo) {
+		m.Id = proto.Int32(value)
+	}
+}
+
+// NewBar creates a new Bar with the provided options.
+func NewBar(opts ...BarOption) *Bar {
+	m := &Bar{}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// ApplyBarOptions applies the provided options to an existing Bar.
+func ApplyBarOptions(m *Bar, opts ...BarOption) {
+	for _, opt := range opts {
+		opt(m)
+	}
+}
+
+// BarOption defines a functional option for Bar.
+type BarOption func(*Bar)
+
+// WithIdForBar sets the Id field of Bar.
+func WithIdForBar(value int32) BarOption {
+	return func(m *Bar) {
+		m.Id = proto.Int32(value)
+	}
+}
