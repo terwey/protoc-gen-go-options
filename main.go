@@ -169,7 +169,7 @@ func generateOneofOptionWithName(g *protogen.GeneratedFile, message *protogen.Me
 	g.P(fmt.Sprintf("// %s sets the %s field of %s.", optionName, fieldName, message.GoIdent.GoName))
 	g.P(fmt.Sprintf("func %s(value %s) %sOption {", optionName, getGoTypeFromKind(g, field), message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
-	g.P(fmt.Sprintf("\t\tm.Choice = &%s{", wrapperType))
+	g.P(fmt.Sprintf("\t\tm.%s = &%s{", field.Oneof.GoName, wrapperType))
 	g.P(fmt.Sprintf("\t\t\t%s: value,", fieldName))
 	g.P("\t\t}")
 	g.P("\t}")
