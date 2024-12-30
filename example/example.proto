@@ -1,0 +1,39 @@
+edition = "2023";
+
+package example;
+
+option go_package = "github.com/terwey/protoc-gen-go-options/example;example";
+
+// Example message with basic field types
+message BasicMessage {
+  string name = 1;
+  int32 age = 2;
+  bool is_active = 3;
+}
+
+// Message showcasing repeated fields
+message RepeatedFieldsMessage {
+  repeated string tags = 1;
+  repeated int32 values = 2;
+}
+
+// Message with nested fields
+message NestedMessage {
+  BasicMessage basic = 1;
+  string description = 2;
+}
+
+// Message with oneof to showcase options for mutually exclusive fields
+message OneofMessage {
+  oneof choice {
+    string text = 1;
+    int32 number = 2;
+  }
+}
+
+// Message demonstrating deeply nested messages
+message ComplexMessage {
+  NestedMessage nested = 1;
+  repeated NestedMessage nested_list = 2;
+  map<string, int32> metadata = 3;
+}
