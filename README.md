@@ -55,14 +55,20 @@ func WithNumber(value int32) OneofMessageOption {
 Construct Protobuf messages using functional options:
 ```go
 msg := NewOneofMessage(
-    WithText("example text"),
+	WithText("example text"),
 )
-fmt.Println(msg) // Output: &OneofMessage{Choice: &OneofMessage_Text{Text: "example text"}}
+fmt.Printf("%v", msg)
+// Output: text:"example text"
 
 msg2 := NewOneofMessage(
-    WithNumber(42),
+	WithNumber(42),
 )
-fmt.Println(msg2) // Output: &OneofMessage{Choice: &OneofMessage_Number{Number: 42}}
+fmt.Println(msg2)
+// Output: number:42
+
+ApplyOneofMessageOptions(msg, WithText("foo bar"))
+fmt.Println(msg)
+// Output: text:"foo bar"
 ```
 
 For more examples, refer to the [`example`](./example) directory.

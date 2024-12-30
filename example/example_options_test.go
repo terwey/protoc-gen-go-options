@@ -1,11 +1,38 @@
 package example
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/protobuf/proto"
 )
+
+func ExampleNewOneofMessage() {
+	msg := NewOneofMessage(
+		WithText("example text"),
+	)
+	fmt.Printf("%v", msg)
+	// Output: text:"example text"
+}
+
+func ExampleNewOneOfMessage2() {
+	msg2 := NewOneofMessage(
+		WithNumber(42),
+	)
+	fmt.Println(msg2)
+	// Output: number:42
+}
+
+func ExampleApplyOneofMessageOptions() {
+	msg := NewOneofMessage(
+		WithText("example text"),
+	)
+
+	ApplyOneofMessageOptions(msg, WithText("foo bar"))
+	fmt.Println(msg)
+	// Output: text:"foo bar"
+}
 
 func TestNewAndApply(t *testing.T) {
 	tests := []struct {
