@@ -22,12 +22,21 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.23"
+          cache: true
+	
+      # Download and install the latest protoc
+      - name: Install protoc
+        run: |
+          PROTOC_ZIP=protoc-29.2-linux-x86_64.zip
+          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v29.2/$PROTOC_ZIP
+          sudo unzip -o $PROTOC_ZIP -d /usr/local bin/protoc
+          sudo unzip -o $PROTOC_ZIP -d /usr/local 'include/*'
+          rm -f $PROTOC_ZIP
+          protoc --version # Verify installation
 
       # Install protoc and protoc-gen-go-options
-      - name: Install protoc and dependencies
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
           go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
           go install .
 
