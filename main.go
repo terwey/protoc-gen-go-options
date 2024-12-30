@@ -152,7 +152,7 @@ func generateMapOptionWithName(g *protogen.GeneratedFile, message *protogen.Mess
 }
 
 func generateRepeatedOptionWithName(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
-	fieldType := "[]" + getBaseGoType(g, field)
+	fieldType := "..." + getBaseGoType(g, field)
 	fieldName := field.GoName
 	g.P(fmt.Sprintf("// %s sets the %s field of %s.", optionName, fieldName, message.GoIdent.GoName))
 	g.P(fmt.Sprintf("func %s(values %s) %sOption {", optionName, fieldType, message.GoIdent.GoName))

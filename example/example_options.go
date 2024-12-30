@@ -67,14 +67,14 @@ func ApplyRepeatedFieldsMessageOptions(m *RepeatedFieldsMessage, opts ...Repeate
 type RepeatedFieldsMessageOption func(*RepeatedFieldsMessage)
 
 // WithTags sets the Tags field of RepeatedFieldsMessage.
-func WithTags(values []string) RepeatedFieldsMessageOption {
+func WithTags(values ...string) RepeatedFieldsMessageOption {
 	return func(m *RepeatedFieldsMessage) {
 		m.Tags = values
 	}
 }
 
 // WithValues sets the Values field of RepeatedFieldsMessage.
-func WithValues(values []int32) RepeatedFieldsMessageOption {
+func WithValues(values ...int32) RepeatedFieldsMessageOption {
 	return func(m *RepeatedFieldsMessage) {
 		m.Values = values
 	}
@@ -177,7 +177,7 @@ func WithNested(value *NestedMessage) ComplexMessageOption {
 }
 
 // WithNestedList sets the NestedList field of ComplexMessage.
-func WithNestedList(values []*NestedMessage) ComplexMessageOption {
+func WithNestedList(values ...*NestedMessage) ComplexMessageOption {
 	return func(m *ComplexMessage) {
 		m.NestedList = values
 	}
