@@ -141,7 +141,7 @@ func TestComplexMessage(t *testing.T) {
 				WithNestedList([]*NestedMessage{
 					{Description: proto.String("nested1")},
 					{Description: proto.String("nested2")},
-				}),
+				}...),
 			},
 			want: &ComplexMessage{
 				NestedList: []*NestedMessage{
@@ -190,7 +190,7 @@ func TestRepeatedFieldsMessage(t *testing.T) {
 		{
 			name: "SetTags",
 			opts: []RepeatedFieldsMessageOption{
-				WithTags([]string{"tag1", "tag2"}),
+				WithTags([]string{"tag1", "tag2"}...),
 			},
 			want: &RepeatedFieldsMessage{
 				Tags: []string{"tag1", "tag2"},
@@ -199,7 +199,7 @@ func TestRepeatedFieldsMessage(t *testing.T) {
 		{
 			name: "SetValues",
 			opts: []RepeatedFieldsMessageOption{
-				WithValues([]int32{1, 2, 3}),
+				WithValues([]int32{1, 2, 3}...),
 			},
 			want: &RepeatedFieldsMessage{
 				Values: []int32{1, 2, 3},
