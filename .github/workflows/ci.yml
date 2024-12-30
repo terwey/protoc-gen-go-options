@@ -22,7 +22,6 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: "1.23"
-          cache: true
 	
       # Download and install the latest protoc
       - name: Install protoc
