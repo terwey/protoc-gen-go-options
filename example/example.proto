@@ -4,6 +4,8 @@ package example;
 
 option go_package = "github.com/terwey/protoc-gen-go-options/example;example";
 
+import "identifier.proto";
+
 // Example message with basic field types
 message BasicMessage {
   string name = 1;
@@ -47,4 +49,29 @@ message Foo {
 
 message Bar {
   int32 id = 1;
+}
+
+// Message with Identifier
+message SomeMessage {
+  identifier.Identifier identifier = 1;
+  // this caused some weird issues with the generator
+  repeated identifier.Identifier include = 2;
+}
+
+// If you don't want to generate a New function for a message,
+// you can add the GO_OPTIONS_SKIP_INIT option as somewhere
+// in the leading comments of the message.
+// This is useful if you already have an existing New function
+// but still want to generate the functions that call to it.
+// GO_OPTIONS_SKIP_INIT
+message NoInit {
+}
+
+message FooBarWithEnum {
+  enum Status {
+    UNKNOWN = 0;
+    ACTIVE = 1;
+    INACTIVE = 2;
+  }
+  Status status = 1;
 }

@@ -1,0 +1,12 @@
+edition = "2023";
+
+package identifier;
+
+option go_package = "github.com/terwey/protoc-gen-go-options/example/identifier;identifier";
+
+// Identifier exists so we have to import an external proto and can generate two packages
+// If your message should be optionless you can mark it with the comment option
+// GO_OPTIONS_OPTIONLESS
+message Identifier {
+  string id = 1;
+}
