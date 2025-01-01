@@ -73,6 +73,30 @@ fmt.Println(msg)
 
 For more examples, refer to the [`example`](./example) directory.
 
+### Special Comments for Custom Behavior
+
+The plugin recognizes the following special comments in your `.proto` files to customize the generated code:
+
+#### `GO_OPTIONS_OPTIONLESS`
+  Add this comment to a message to skip generating options for it. This is useful for messages where options are unnecessary.
+
+  ```proto
+  // GO_OPTIONS_OPTIONLESS
+  message ExampleMessage {
+      string field = 1;
+  }
+  ```
+
+#### `GO_OPTIONS_SKIP_INIT`
+  Add this comment to a message to skip generating the default constructor (`New[Message]`). This is useful if you prefer to handle initialization manually.
+
+  ```proto
+  // GO_OPTIONS_SKIP_INIT
+  message ExampleMessage {
+      string field = 1;
+  }
+  ```
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/terwey/protoc-gen-go-options/example/identifier"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -163,6 +164,17 @@ func TestComplexMessage(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "WithNewNestedForComplexMessage",
+			opts: []ComplexMessageOption{
+				WithNewNestedForComplexMessage(WithDescription("complex nested")),
+			},
+			want: &ComplexMessage{
+				Nested: &NestedMessage{
+					Description: proto.String("complex nested"),
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -251,6 +263,17 @@ func TestNestedMessage(t *testing.T) {
 				Description: proto.String("a nested message"),
 			},
 		},
+		{
+			name: "WithNewBasicForNestedMessage",
+			opts: []NestedMessageOption{
+				WithNewBasicForNestedMessage(WithName("nested basic")),
+			},
+			want: &NestedMessage{
+				Basic: &BasicMessage{
+					Name: proto.String("nested basic"),
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -278,10 +301,12 @@ func TestDuplicateFieldnameFoo(t *testing.T) {
 		{
 			name: "Set ID",
 			opts: []FooOption{
-				WithIdForFoo(30),
+				WithIdForFoo(&identifier.Identifier{
+					Id: proto.String("IdForFoo"),
+				}),
 			},
 			want: &Foo{
-				Id: proto.Int32(30),
+				Id: &identifier.Identifier{Id: proto.String("IdForFoo")},
 			},
 		},
 	}
@@ -311,10 +336,14 @@ func TestDuplicateFieldnameBar(t *testing.T) {
 		{
 			name: "Set ID",
 			opts: []BarOption{
-				WithIdForBar(30),
+				WithIdForBar(&identifier.Identifier{
+					Id: proto.String("IdForBar"),
+				}),
 			},
 			want: &Bar{
-				Id: proto.Int32(30),
+				Id: &identifier.Identifier{
+					Id: proto.String("IdForBar"),
+				},
 			},
 		},
 	}
@@ -330,6 +359,177 @@ func TestDuplicateFieldnameBar(t *testing.T) {
 			ApplyBarOptions(existing, tt.opts...)
 			if diff := cmp.Diff(existing, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
 				t.Errorf("ApplyBasicMessageOptions() (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestFoo(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []FooOption
+		want *Foo
+	}{
+		{
+			name: "WithNewIdForFoo",
+			opts: []FooOption{
+				WithNewIdForFoo(),
+			},
+			want: &Foo{
+				Id: identifier.NewIdentifier(),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewFoo(tt.opts...)
+			if diff := cmp.Diff(got, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
+				t.Errorf("%s (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
+func TestBar(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []BarOption
+		want *Bar
+	}{
+		{
+			name: "WithNewIdForBar",
+			opts: []BarOption{
+				WithNewIdForBar(),
+			},
+			want: &Bar{
+				Id: identifier.NewIdentifier(),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewBar(tt.opts...)
+			if diff := cmp.Diff(got, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
+				t.Errorf("%s (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
+func TestSomeMessage(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []SomeMessageOption
+		want *SomeMessage
+	}{
+		{
+			name: "WithNewIdentifierForSomeMessage",
+			opts: []SomeMessageOption{
+				WithNewIdentifierForSomeMessage(),
+			},
+			want: &SomeMessage{
+				Identifier: identifier.NewIdentifier(),
+			},
+		},
+		{
+			name: "WithIdentifier",
+			opts: []SomeMessageOption{
+				WithIdentifier(&identifier.Identifier{Id: proto.String("custom-id")}),
+			},
+			want: &SomeMessage{
+				Identifier: &identifier.Identifier{Id: proto.String("custom-id")},
+			},
+		},
+		{
+			name: "WithInclude",
+			opts: []SomeMessageOption{
+				WithInclude([]*identifier.Identifier{
+					{Id: proto.String("id1")},
+					{Id: proto.String("id2")},
+				}...),
+			},
+			want: &SomeMessage{
+				Include: []*identifier.Identifier{
+					{Id: proto.String("id1")},
+					{Id: proto.String("id2")},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewSomeMessage(tt.opts...)
+			if diff := cmp.Diff(got, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
+				t.Errorf("%s (-want +got):\n%s", tt.name, diff)
+			}
+
+			existing := &SomeMessage{}
+			ApplySomeMessageOptions(existing, tt.opts...)
+			if diff := cmp.Diff(existing, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
+				t.Errorf("ApplySomeMessageOptions %s (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
+func TestFooBarWithEnum(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []FooBarWithEnumOption
+		want *FooBarWithEnum
+	}{
+		{
+			name: "WithStatus",
+			opts: []FooBarWithEnumOption{
+				WithStatus(FooBarWithEnum_ACTIVE.Enum()),
+			},
+			want: &FooBarWithEnum{
+				Status: FooBarWithEnum_ACTIVE.Enum(),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NewFooBarWithEnum(tt.opts...)
+			if diff := cmp.Diff(got, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
+				t.Errorf("%s (-want +got):\n%s", tt.name, diff)
+			}
+
+			existing := &FooBarWithEnum{}
+			ApplyFooBarWithEnumOptions(existing, tt.opts...)
+			if diff := cmp.Diff(existing, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
+				t.Errorf("ApplyFooBarWithEnumOptions %s (-want +got):\n%s", tt.name, diff)
+			}
+		})
+	}
+}
+
+func TestIdentifier(t *testing.T) {
+	tests := []struct {
+		name string
+		opts []identifier.IdentifierOption
+		want *identifier.Identifier
+	}{
+		{
+			name: "WithId",
+			opts: []identifier.IdentifierOption{
+				identifier.WithId("id-value"),
+			},
+			want: &identifier.Identifier{
+				Id: proto.String("id-value"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := identifier.NewIdentifier(tt.opts...)
+			if diff := cmp.Diff(got, tt.want, cmp.Comparer(proto.Equal)); diff != "" {
+				t.Errorf("%s (-want +got):\n%s", tt.name, diff)
 			}
 		})
 	}

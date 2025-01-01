@@ -44,11 +44,11 @@ message ComplexMessage {
 // This would cause a function name collision
 // The generator handles this by then generating WithIdForFoo and WithIdForBar
 message Foo {
-  int32 id = 1;
+  identifier.Identifier id = 1;
 }
 
 message Bar {
-  int32 id = 1;
+  identifier.Identifier id = 1;
 }
 
 // Message with Identifier
@@ -65,7 +65,11 @@ message SomeMessage {
 // but still want to generate the functions that call to it.
 // GO_OPTIONS_SKIP_INIT
 message NoInit {
+  string noInitName = 1;
 }
+
+// Message that is empty will generate no options
+message EmptyMessage {}
 
 message FooBarWithEnum {
   enum Status {

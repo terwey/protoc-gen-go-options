@@ -87,13 +87,11 @@ func optionFlagForMessage(message *protogen.Message, o OptionFlag) bool {
 }
 
 func generateOptionsForMessage(g *protogen.GeneratedFile, message *protogen.Message, collisionMap map[string]int) {
-	log(g, "generating options for message: ", message.GoIdent.GoName)
-	nameSuffix := ""
-	if collisionMap[message.GoIdent.GoName] > 1 {
-		g.P("// collision for message name: ", message.GoIdent.GoName)
-		g.P("// map: ", collisionMap)
-		nameSuffix = "Msg"
+	if message.Fields == nil {
+		log(g, "skipping message because it has no fields: ", message.GoIdent.GoName)
+		return
 	}
+	log(g, "generating options for message: ", message.GoIdent.GoName)
 
 	// Declare the Option interface for this message
 	g.P(fmt.Sprintf("// %sOption defines a functional option for %s.", message.GoIdent.GoName, message.GoIdent.GoName))
@@ -101,7 +99,7 @@ func generateOptionsForMessage(g *protogen.GeneratedFile, message *protogen.Mess
 	g.P()
 
 	if !optionFlagForMessage(message, GO_OPTIONS_SKIP_INIT) {
-		constructorName := fmt.Sprintf("New%s%s", message.GoIdent.GoName, nameSuffix)
+		constructorName := fmt.Sprintf("New%s", message.GoIdent.GoName)
 		g.P(fmt.Sprintf("// %s creates a new %s.", constructorName, message.GoIdent.GoName))
 		g.P(fmt.Sprintf("func %s(opts ...%s) *%s {", constructorName, qualifiedIdentForName(g, message.GoIdent, "", "Option"), message.GoIdent.GoName))
 		g.P(fmt.Sprintf("\tm := &%s{}", message.GoIdent.GoName))
@@ -115,7 +113,7 @@ func generateOptionsForMessage(g *protogen.GeneratedFile, message *protogen.Mess
 
 	if !optionFlagForMessage(message, GO_OPTIONS_OPTIONLESS) {
 		// Generate ApplyMessageOptions function
-		applyName := fmt.Sprintf("Apply%s%sOptions", message.GoIdent.GoName, nameSuffix)
+		applyName := fmt.Sprintf("Apply%sOptions", message.GoIdent.GoName)
 		g.P(fmt.Sprintf("// %s applies the provided options to an existing %s.", applyName, message.GoIdent.GoName))
 		g.P(fmt.Sprintf("func %s(m *%s, opts ...%s) *%s {", applyName, message.GoIdent.GoName, qualifiedIdentForName(g, message.GoIdent, "", "Option"), g.QualifiedGoIdent(message.GoIdent)))
 		g.P("\tfor _, opt := range opts {")
@@ -148,7 +146,7 @@ func generateFieldOptions(g *protogen.GeneratedFile, message *protogen.Message, 
 		} else if field.Desc.IsList() {
 			generateRepeatedFieldOption(g, message, field, optionName)
 		} else if field.Desc.Kind() == protoreflect.MessageKind {
-			generateNestedFieldOption(g, message, field, fmt.Sprintf("WithNew%s", field.GoName))
+			generateNestedFieldOption(g, message, field, fmt.Sprintf("WithNew%sFor%s", field.GoName, message.GoIdent.GoName))
 			generateDirectNestedFieldOption(g, message, field, optionName)
 		} else {
 			generateScalarFieldOption(g, message, field, optionName)
