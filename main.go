@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/types/pluginpb"
 )
 
-var logEnabled = true
+var logEnabled = false
 
 type OptionFlag string
 
