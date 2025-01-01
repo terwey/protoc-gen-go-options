@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -62,6 +63,10 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	for _, message := range file.Messages {
 		generateMessageOptions(g, message, sharedFields)
 	}
+
+	for _, message := range file.Messages {
+		generateNewOptionsFunction(g, message, file, sharedFields)
+	}
 }
 
 func generateMessageOptions(g *protogen.GeneratedFile, message *protogen.Message, sharedFields map[string]bool) {
@@ -95,14 +100,14 @@ func generateMessageOptions(g *protogen.GeneratedFile, message *protogen.Message
 	// Generate option setters
 	for _, field := range message.Fields {
 		fieldName := field.GoName
-		optionName := fmt.Sprintf("With%s", fieldName)
+		optionName := fmt.Sprintf("%s", fieldName)
 		if sharedFields[fieldName] {
-			optionName = fmt.Sprintf("With%sFor%s", fieldName, message.GoIdent.GoName)
+			optionName = fmt.Sprintf("%sFor%s", fieldName, message.GoIdent.GoName)
 		}
 
 		if field.Oneof != nil && !field.Oneof.Desc.IsSynthetic() {
 			// Handle oneof fields
-			generateOneofOptionWithName(g, message, field, optionName)
+			generateOneofNewOptionWithName(g, message, field, optionName)
 		} else if field.Desc.IsList() {
 			// Handle repeated fields
 			generateRepeatedOptionWithName(g, message, field, optionName)
@@ -113,8 +118,57 @@ func generateMessageOptions(g *protogen.GeneratedFile, message *protogen.Message
 	}
 }
 
+func generateNewOptionsFunction(g *protogen.GeneratedFile, message *protogen.Message, file *protogen.File, sharedFields map[string]bool) {
+	messageName := message.GoIdent.GoName
+	for _, field := range message.Fields {
+		if field.Oneof != nil && !field.Oneof.Desc.IsSynthetic() {
+			continue
+		}
+		if field.Desc.IsList() || field.Desc.IsMap() {
+			continue
+		}
+		if field.Desc.Kind() == protoreflect.MessageKind {
+			fieldName := field.GoName
+			fieldType := g.QualifiedGoIdent(field.Message.GoIdent)
+			fieldPackage := getPackageNameFromImportPath(field.Message.GoIdent.GoImportPath)
+			currentPackage := string(file.GoPackageName)
+
+			optionName := fieldName
+			if sharedFields[fieldName] {
+				optionName = fmt.Sprintf("%sFor%s", fieldName, message.GoIdent.GoName)
+			}
+
+			// Determine if the package name is needed
+			var constructor string
+			if fieldPackage == currentPackage {
+				constructor = fmt.Sprintf("New%s", field.Message.GoIdent.GoName) // Same package: no prefix
+			} else {
+				constructor = fmt.Sprintf("%s.New%s", fieldPackage, field.Message.GoIdent.GoName) // Different package: include prefix
+			}
+
+			methodName := fmt.Sprintf("New%s", optionName)
+
+			g.P(fmt.Sprintf("// %s creates a new %s and sets it to the %s field.", methodName, fieldType, fieldName))
+			g.P(fmt.Sprintf("func %s() %sOption {", methodName, messageName))
+			g.P(fmt.Sprintf("\treturn func(m *%s) {", messageName))
+			g.P(fmt.Sprintf("\t\tm.%s = %s()", fieldName, constructor)) // Use conditional constructor
+			g.P("\t}")
+			g.P("}")
+			g.P()
+		}
+	}
+}
+
+// Extract the package name from the import path
+func getPackageNameFromImportPath(importPath protogen.GoImportPath) string {
+	parts := strings.Split(string(importPath), "/")
+	return parts[len(parts)-1]
+}
+
 func generateRegularOptionWithName(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
 	fieldName := field.GoName
+
+	optionName = "With" + optionName
 
 	// Handle map fields
 	if field.Desc.IsMap() {
@@ -152,12 +206,45 @@ func generateMapOptionWithName(g *protogen.GeneratedFile, message *protogen.Mess
 }
 
 func generateRepeatedOptionWithName(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
+	optionName = "With" + optionName
 	fieldType := "..." + getBaseGoType(g, field)
 	fieldName := field.GoName
 	g.P(fmt.Sprintf("// %s sets the %s field of %s.", optionName, fieldName, message.GoIdent.GoName))
 	g.P(fmt.Sprintf("func %s(values %s) %sOption {", optionName, fieldType, message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\t\tm.%s = values", fieldName))
+	g.P("\t}")
+	g.P("}")
+	g.P()
+}
+
+func generateOneofNewOptionWithName(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
+	fieldName := field.GoName
+	wrapperType := fmt.Sprintf("%s_%s", message.GoIdent.GoName, fieldName)
+
+	generateOneofOptionWithName(g, message, field, "With"+optionName)
+
+	optionName = "WithNew" + optionName
+
+	g.P(fmt.Sprintf("// %s sets the %s OneOf field of %s.", optionName, fieldName, field.Oneof.GoName))
+	if supportsOptions(field) {
+		// g.P(fmt.Sprintf("func %s(opts ...%sOption) %sOption {", optionName, field.Message.GoIdent.GoName, message.GoIdent.GoName))
+		g.P(fmt.Sprintf("func %s(opts ...%sOption) %sOption {", optionName, g.QualifiedGoIdent(field.Message.GoIdent), message.GoIdent.GoName))
+
+	} else {
+		g.P(fmt.Sprintf("func %s(value %s) %sOption {", optionName, getGoTypeFromKind(g, field), message.GoIdent.GoName))
+	}
+	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
+	if supportsOptions(field) {
+		g.P(fmt.Sprintf("\t\tm.%s = &%s{", field.Oneof.GoName, wrapperType))
+		fieldPackage := getPackageNameFromImportPath(field.Message.GoIdent.GoImportPath)
+		g.P(fmt.Sprintf("\t\t\t%s: %s.New%s(opts...),", fieldName, fieldPackage, field.Message.GoIdent.GoName))
+		g.P("\t\t}")
+	} else {
+		g.P(fmt.Sprintf("\t\tm.%s = &%s{", field.Oneof.GoName, wrapperType))
+		g.P(fmt.Sprintf("\t\t\t%s: value,", fieldName))
+		g.P("\t\t}")
+	}
 	g.P("\t}")
 	g.P("}")
 	g.P()
@@ -262,4 +349,8 @@ func findSharedFieldNames(messages []*protogen.Message) map[string]bool {
 	}
 
 	return sharedFields
+}
+
+func supportsOptions(field *protogen.Field) bool {
+	return field.Desc.Kind() == protoreflect.MessageKind
 }
