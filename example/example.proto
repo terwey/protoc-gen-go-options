@@ -65,6 +65,7 @@ message SomeMessage {
 // but still want to generate the functions that call to it.
 // GO_OPTIONS_SKIP_INIT
 message NoInit {
+
   string noInitName = 1;
 }
 
@@ -78,4 +79,18 @@ message FooBarWithEnum {
     INACTIVE = 2;
   }
   Status status = 1;
+}
+
+message JsonExample {
+  // In case the message should be JSON-marshalable for persistence
+  // you can add the GO_OPTIONS_JSON_PERSISTENT option in the
+  // leading comment of the field.
+  // This will generate a GetFieldnameAsJSON and SetFieldnameFromJSON 
+  // function on the message.
+  // GO_OPTIONS_JSON_PERSISTENT
+  BasicMessage basic = 1;
+}
+
+message Primitives {
+  int64 integer64 = 1;
 }

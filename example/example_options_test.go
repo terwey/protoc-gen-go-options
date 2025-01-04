@@ -244,7 +244,7 @@ func TestNestedMessage(t *testing.T) {
 		{
 			name: "SetBasic",
 			opts: []NestedMessageOption{
-				WithBasic(&BasicMessage{
+				WithBasicForNestedMessage(&BasicMessage{
 					Name: proto.String("basic"),
 				}),
 			},

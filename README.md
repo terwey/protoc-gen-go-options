@@ -97,6 +97,37 @@ The plugin recognizes the following special comments in your `.proto` files to c
   }
   ```
 
+### `GO_OPTIONS_JSON_PERSISTENT`
+
+The `GO_OPTIONS_JSON_PERSISTENT` option enables the generated code to support JSON persistence for fields by generating JSON-specific helper methods.
+
+For the following proto definition:
+
+```proto
+message JsonExample {
+  // GO_OPTIONS_JSON_PERSISTENT
+  BasicMessage basic = 1;
+}
+```
+
+The generated Go code includes:
+
+```go
+// GetBasicAsJSON returns the Basic field as a JSON byte slice.
+func (m *JsonExample) GetBasicAsJSON() ([]byte, error) {
+  out, err := json.Marshal(m.Basic)
+  if err != nil {
+    return nil, fmt.Errorf("failed to marshal Basic field: %w", "%s", err)
+  }
+  return out, nil
+}
+
+// SetBasicFromJSON sets the Basic field from a JSON byte slice.
+func (m *JsonExample) SetBasicFromJSON(v []byte) error {
+  return json.Unmarshal(v, &m.Basic)
+}
+```
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).

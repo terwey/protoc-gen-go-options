@@ -15,8 +15,9 @@ var logEnabled = false
 type OptionFlag string
 
 const (
-	GO_OPTIONS_OPTIONLESS OptionFlag = "GO_OPTIONS_OPTIONLESS"
-	GO_OPTIONS_SKIP_INIT  OptionFlag = "GO_OPTIONS_SKIP_INIT"
+	GO_OPTIONS_OPTIONLESS      OptionFlag = "GO_OPTIONS_OPTIONLESS"
+	GO_OPTIONS_SKIP_INIT       OptionFlag = "GO_OPTIONS_SKIP_INIT"
+	GO_OPTIONS_JSON_PERSISTENT OptionFlag = "GO_OPTIONS_JSON_PERSISTENT"
 )
 
 func main() {
@@ -47,6 +48,69 @@ func main() {
 	})
 }
 
+func getImports(file *protogen.File) []string {
+	var imports []string
+
+	if requiresJson(file) {
+		imports = append(imports, "\"encoding/json\"")
+	}
+	if requiresFmt(file) {
+		imports = append(imports, "\"fmt\"")
+	}
+	if requiresProto(file) {
+		imports = append(imports, "\"google.golang.org/protobuf/proto\"")
+	}
+	if requiresTime(file) {
+		imports = append(imports, "\"time\"")
+	}
+
+	return imports
+}
+
+func requiresTime(file *protogen.File) bool {
+	for _, message := range file.Messages {
+		for _, field := range message.Fields {
+			if field.Desc.Kind() == protoreflect.MessageKind && field.Message.GoIdent.GoName == "Timestamp" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func requiresProto(file *protogen.File) bool {
+	for _, message := range file.Messages {
+		for _, field := range message.Fields {
+			if protoHelperFunc(field.Desc.Kind()) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func requiresJson(file *protogen.File) bool {
+	for _, message := range file.Messages {
+		for _, field := range message.Fields {
+			if optionFlagForField(field, GO_OPTIONS_JSON_PERSISTENT) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func requiresFmt(file *protogen.File) bool {
+	for _, message := range file.Messages {
+		for _, field := range message.Fields {
+			if optionFlagForField(field, GO_OPTIONS_JSON_PERSISTENT) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	filename := file.GeneratedFilenamePrefix + "_options.go"
 	g := gen.NewGeneratedFile(filename, file.GoImportPath)
@@ -55,7 +119,14 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 	g.P("// source: ", file.Proto.GetName())
 	log(g, "log enabled")
 	g.P("package ", file.GoPackageName)
-	g.P("import (\"google.golang.org/protobuf/proto\")")
+	imports := getImports(file)
+	if len(imports) != 0 {
+		g.P("import (")
+		for _, i := range imports {
+			g.P(i)
+		}
+		g.P(")")
+	}
 
 	collisionMap := detectCollisions(file.Messages)
 
@@ -84,6 +155,10 @@ func detectCollisions(messages []*protogen.Message) map[string]int {
 
 func optionFlagForMessage(message *protogen.Message, o OptionFlag) bool {
 	return strings.Contains(message.Comments.Leading.String(), string(o))
+}
+
+func optionFlagForField(field *protogen.Field, o OptionFlag) bool {
+	return strings.Contains(field.Comments.Leading.String(), string(o))
 }
 
 func generateOptionsForMessage(g *protogen.GeneratedFile, message *protogen.Message, collisionMap map[string]int) {
@@ -125,7 +200,7 @@ func generateOptionsForMessage(g *protogen.GeneratedFile, message *protogen.Mess
 	}
 
 	generateFieldOptions(g, message, collisionMap)
-	generateOneOfOptions(g, message)
+	generateOneOfOptions(g, message, collisionMap)
 }
 
 func generateFieldOptions(g *protogen.GeneratedFile, message *protogen.Message, collisionMap map[string]int) {
@@ -141,6 +216,10 @@ func generateFieldOptions(g *protogen.GeneratedFile, message *protogen.Message, 
 			optionName = fmt.Sprintf("%sFor%s", optionName, message.GoIdent.GoName)
 		}
 
+		if optionFlagForField(field, GO_OPTIONS_JSON_PERSISTENT) {
+			generateJsonMethods(g, message, field)
+		}
+
 		if field.Desc.IsMap() {
 			generateMapFieldOption(g, message, field, optionName)
 		} else if field.Desc.IsList() {
@@ -154,7 +233,7 @@ func generateFieldOptions(g *protogen.GeneratedFile, message *protogen.Message, 
 	}
 }
 
-func generateOneOfOptions(g *protogen.GeneratedFile, message *protogen.Message) {
+func generateOneOfOptions(g *protogen.GeneratedFile, message *protogen.Message, collisionMap map[string]int) {
 	log(g, "generating oneof options for message: ", message.GoIdent.GoName)
 	for _, oneof := range message.Oneofs {
 		if oneof.Desc.IsSynthetic() {
@@ -162,8 +241,12 @@ func generateOneOfOptions(g *protogen.GeneratedFile, message *protogen.Message) 
 		}
 
 		for _, field := range oneof.Fields {
+
 			fieldWrapperType := fmt.Sprintf("%s_%s", message.GoIdent.GoName, field.GoName)
 			optionName := fmt.Sprintf("With%s", field.GoName)
+			if collisionMap[field.GoName] > 1 {
+				optionName = fmt.Sprintf("%sFor%s", optionName, message.GoIdent.GoName)
+			}
 			g.P(fmt.Sprintf("// %s sets the %s oneof field to %s.", optionName, oneof.GoName, field.GoName))
 			if field.Desc.IsList() {
 				log(g, "oneof field is a list")
@@ -188,6 +271,11 @@ func generateOneOfOptions(g *protogen.GeneratedFile, message *protogen.Message) 
 	}
 }
 
+func wellKnown(g *protogen.GeneratedFile, ident protogen.GoIdent) bool {
+	log(g, "checking if well known type: ", ident.GoImportPath.String())
+	return strings.Contains(ident.GoImportPath.String(), "protobuf/types/known")
+}
+
 func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
 	// we need to check if the message field is optionless
 	optionless := optionFlagForMessage(field.Message, GO_OPTIONS_OPTIONLESS)
@@ -196,7 +284,17 @@ func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Mess
 	if optionless {
 		g.P(fmt.Sprintf("func %s() %s {", optionName, qualifiedIdentForName(g, message.GoIdent, "", "Option")))
 	} else {
-		g.P(fmt.Sprintf("func %s(opts ...%s) %s {", optionName, qualifiedIdentForName(g, field.Message.GoIdent, "", "Option"), qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+		if wellKnown(g, field.Message.GoIdent) && field.Message.GoIdent.GoName == "Timestamp" {
+			log(g, "field is a well known type: timestamp")
+			g.P(fmt.Sprintf("func %s(v time.Time) %s {", optionName, qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+			g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
+			g.P(fmt.Sprintf("\t\tm.%s = timestamppb.New(v)", field.GoName))
+			g.P("\t}")
+			g.P("}")
+			return
+		} else {
+			g.P(fmt.Sprintf("func %s(opts ...%s) %s {", optionName, qualifiedIdentForName(g, field.Message.GoIdent, "", "Option"), qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+		}
 	}
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 	if optionless {
@@ -284,6 +382,27 @@ func generateMapFieldOption(g *protogen.GeneratedFile, message *protogen.Message
 	g.P("\t}")
 	g.P("}")
 	g.P()
+}
+
+func generateJsonMethods(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field) {
+	fieldName := field.GoName
+	messageName := message.GoIdent.GoName
+
+	// Generate GetFieldnameAsJSON and SetFieldnameFromJSON functions
+	log(g, "generating JSON methods for ", messageName, fieldName)
+	g.P(fmt.Sprintf("// Get%sAsJSON returns the %s field as a JSON byte slice.", fieldName, fieldName))
+	g.P("func (m *", messageName, ") Get", fieldName, "AsJSON() ([]byte, error) {")
+	g.P("out, err := json.Marshal(m.", fieldName, ")")
+	g.P("if err != nil {")
+	g.P("return nil, fmt.Errorf(\"failed to marshal ", fieldName, " field: %w\", \"%s\", err)")
+	g.P("}")
+	g.P("return out, nil")
+	g.P("}")
+	g.P()
+	g.P(fmt.Sprintf("// Set%sFromJSON sets the %s field from a JSON byte slice.", fieldName, fieldName))
+	g.P("func (m *", messageName, ") Set", fieldName, "FromJSON(v []byte) error {")
+	g.P("    return json.Unmarshal(v, &m.", fieldName, ")")
+	g.P("}")
 }
 
 func protoHelperFunc(kind protoreflect.Kind) string {

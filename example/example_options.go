@@ -7,6 +7,8 @@ import (
 )
 
 import (
+	"encoding/json"
+	"fmt"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -112,8 +114,8 @@ func WithNewBasicForNestedMessage(opts ...BasicMessageOption) NestedMessageOptio
 	}
 }
 
-// WithBasic sets the Basic field directly.
-func WithBasic(value *BasicMessage) NestedMessageOption {
+// WithBasicForNestedMessage sets the Basic field directly.
+func WithBasicForNestedMessage(value *BasicMessage) NestedMessageOption {
 	return func(m *NestedMessage) {
 		m.Basic = value
 	}
@@ -363,5 +365,80 @@ func ApplyFooBarWithEnumOptions(m *FooBarWithEnum, opts ...FooBarWithEnumOption)
 func WithStatus(value *FooBarWithEnum_Status) FooBarWithEnumOption {
 	return func(m *FooBarWithEnum) {
 		m.Status = value
+	}
+}
+
+// JsonExampleOption defines a functional option for JsonExample.
+type JsonExampleOption func(*JsonExample)
+
+// NewJsonExample creates a new JsonExample.
+func NewJsonExample(opts ...JsonExampleOption) *JsonExample {
+	m := &JsonExample{}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// ApplyJsonExampleOptions applies the provided options to an existing JsonExample.
+func ApplyJsonExampleOptions(m *JsonExample, opts ...JsonExampleOption) *JsonExample {
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// GetBasicAsJSON returns the Basic field as a JSON byte slice.
+func (m *JsonExample) GetBasicAsJSON() ([]byte, error) {
+	out, err := json.Marshal(m.Basic)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal Basic field: %w", "%s", err)
+	}
+	return out, nil
+}
+
+// SetBasicFromJSON sets the Basic field from a JSON byte slice.
+func (m *JsonExample) SetBasicFromJSON(v []byte) error {
+	return json.Unmarshal(v, &m.Basic)
+}
+
+// WithNewBasicForJsonExample sets the Basic field with a new instance.
+func WithNewBasicForJsonExample(opts ...BasicMessageOption) JsonExampleOption {
+	return func(m *JsonExample) {
+		m.Basic = NewBasicMessage(opts...)
+	}
+}
+
+// WithBasicForJsonExample sets the Basic field directly.
+func WithBasicForJsonExample(value *BasicMessage) JsonExampleOption {
+	return func(m *JsonExample) {
+		m.Basic = value
+	}
+}
+
+// PrimitivesOption defines a functional option for Primitives.
+type PrimitivesOption func(*Primitives)
+
+// NewPrimitives creates a new Primitives.
+func NewPrimitives(opts ...PrimitivesOption) *Primitives {
+	m := &Primitives{}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// ApplyPrimitivesOptions applies the provided options to an existing Primitives.
+func ApplyPrimitivesOptions(m *Primitives, opts ...PrimitivesOption) *Primitives {
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// WithInteger64 sets the Integer64 field.
+func WithInteger64(value int64) PrimitivesOption {
+	return func(m *Primitives) {
+		m.Integer64 = proto.Int64(value)
 	}
 }
