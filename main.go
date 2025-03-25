@@ -394,7 +394,7 @@ func generateJsonMethods(g *protogen.GeneratedFile, message *protogen.Message, f
 	g.P("func (m *", messageName, ") Get", fieldName, "AsJSON() ([]byte, error) {")
 	g.P("out, err := json.Marshal(m.", fieldName, ")")
 	g.P("if err != nil {")
-	g.P("return nil, fmt.Errorf(\"failed to marshal ", fieldName, " field: %w\", \"%s\", err)")
+	g.P("return nil, fmt.Errorf(\"failed to marshal ", fieldName, " field: %w\", err)")
 	g.P("}")
 	g.P("return out, nil")
 	g.P("}")
