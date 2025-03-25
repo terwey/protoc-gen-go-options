@@ -5,6 +5,7 @@ package example;
 option go_package = "github.com/terwey/protoc-gen-go-options/example;example";
 
 import "identifier.proto";
+import "google/protobuf/timestamp.proto";
 
 // Example message with basic field types
 message BasicMessage {
@@ -93,4 +94,8 @@ message JsonExample {
 
 message Primitives {
   int64 integer64 = 1;
+}
+
+message WellKnown {
+  google.protobuf.Timestamp created_at = 1;
 }

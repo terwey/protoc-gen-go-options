@@ -4,12 +4,14 @@ package example
 
 import (
 	identifier "github.com/terwey/protoc-gen-go-options/example/identifier"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
 import (
 	"encoding/json"
 	"fmt"
 	"google.golang.org/protobuf/proto"
+	"time"
 )
 
 // BasicMessageOption defines a functional option for BasicMessage.
@@ -392,7 +394,7 @@ func ApplyJsonExampleOptions(m *JsonExample, opts ...JsonExampleOption) *JsonExa
 func (m *JsonExample) GetBasicAsJSON() ([]byte, error) {
 	out, err := json.Marshal(m.Basic)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal Basic field: %w", "%s", err)
+		return nil, fmt.Errorf("failed to marshal Basic field: %w", err)
 	}
 	return out, nil
 }
@@ -440,5 +442,39 @@ func ApplyPrimitivesOptions(m *Primitives, opts ...PrimitivesOption) *Primitives
 func WithInteger64(value int64) PrimitivesOption {
 	return func(m *Primitives) {
 		m.Integer64 = proto.Int64(value)
+	}
+}
+
+// WellKnownOption defines a functional option for WellKnown.
+type WellKnownOption func(*WellKnown)
+
+// NewWellKnown creates a new WellKnown.
+func NewWellKnown(opts ...WellKnownOption) *WellKnown {
+	m := &WellKnown{}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// ApplyWellKnownOptions applies the provided options to an existing WellKnown.
+func ApplyWellKnownOptions(m *WellKnown, opts ...WellKnownOption) *WellKnown {
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// WithNewCreatedAtForWellKnown sets the CreatedAt field with a new instance.
+func WithNewCreatedAtForWellKnown(v time.Time) WellKnownOption {
+	return func(m *WellKnown) {
+		m.CreatedAt = timestamppb.New(v)
+	}
+}
+
+// WithCreatedAt sets the CreatedAt field directly.
+func WithCreatedAt(value *timestamppb.Timestamp) WellKnownOption {
+	return func(m *WellKnown) {
+		m.CreatedAt = value
 	}
 }
