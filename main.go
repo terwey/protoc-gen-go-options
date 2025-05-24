@@ -169,8 +169,8 @@ func generateOptionsForMessage(g *protogen.GeneratedFile, message *protogen.Mess
 	log(g, "generating options for message: ", message.GoIdent.GoName)
 
 	// Declare the Option interface for this message
-	g.P(fmt.Sprintf("// %sOption defines a functional option for %s.", message.GoIdent.GoName, message.GoIdent.GoName))
-	g.P(fmt.Sprintf("type %sOption func(*%s)", message.GoIdent.GoName, message.GoIdent.GoName))
+	g.P(fmt.Sprintf("// %[1]sOption defines a functional option for %[1]s.", message.GoIdent.GoName))
+	g.P(fmt.Sprintf("type %[1]sOption func(*%[1]s)", message.GoIdent.GoName))
 	g.P()
 
 	if !optionFlagForMessage(message, GO_OPTIONS_SKIP_INIT) {
@@ -390,7 +390,7 @@ func generateJsonMethods(g *protogen.GeneratedFile, message *protogen.Message, f
 
 	// Generate GetFieldnameAsJSON and SetFieldnameFromJSON functions
 	log(g, "generating JSON methods for ", messageName, fieldName)
-	g.P(fmt.Sprintf("// Get%sAsJSON returns the %s field as a JSON byte slice.", fieldName, fieldName))
+	g.P(fmt.Sprintf("// Get%[1]sAsJSON returns the %[1]s field as a JSON byte slice.", fieldName))
 	g.P("func (m *", messageName, ") Get", fieldName, "AsJSON() ([]byte, error) {")
 	g.P("out, err := json.Marshal(m.", fieldName, ")")
 	g.P("if err != nil {")
@@ -399,7 +399,7 @@ func generateJsonMethods(g *protogen.GeneratedFile, message *protogen.Message, f
 	g.P("return out, nil")
 	g.P("}")
 	g.P()
-	g.P(fmt.Sprintf("// Set%sFromJSON sets the %s field from a JSON byte slice.", fieldName, fieldName))
+	g.P(fmt.Sprintf("// Set%[1]sFromJSON sets the %[1]s field from a JSON byte slice.", fieldName))
 	g.P("func (m *", messageName, ") Set", fieldName, "FromJSON(v []byte) error {")
 	g.P("    return json.Unmarshal(v, &m.", fieldName, ")")
 	g.P("}")
