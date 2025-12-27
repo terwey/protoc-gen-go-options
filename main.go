@@ -38,11 +38,29 @@ func main() {
 		gen.SupportedEditionsMinimum = descriptorpb.Edition_EDITION_PROTO2
 		gen.SupportedEditionsMaximum = descriptorpb.Edition_EDITION_2023
 
+		// Build collision map across all files in the same package
+		packageCollisions := make(map[string]map[string]int)
 		for _, file := range gen.Files {
 			if !file.Generate {
 				continue
 			}
-			generateFile(gen, file)
+			pkgName := string(file.GoPackageName)
+			if packageCollisions[pkgName] == nil {
+				packageCollisions[pkgName] = make(map[string]int)
+			}
+			for _, msg := range file.Messages {
+				for _, field := range msg.Fields {
+					packageCollisions[pkgName][field.GoName]++
+				}
+			}
+		}
+
+		for _, file := range gen.Files {
+			if !file.Generate {
+				continue
+			}
+			pkgName := string(file.GoPackageName)
+			generateFile(gen, file, packageCollisions[pkgName])
 		}
 		return nil
 	})
@@ -111,7 +129,7 @@ func requiresFmt(file *protogen.File) bool {
 	return false
 }
 
-func generateFile(gen *protogen.Plugin, file *protogen.File) {
+func generateFile(gen *protogen.Plugin, file *protogen.File, packageCollisionMap map[string]int) {
 	filename := file.GeneratedFilenamePrefix + "_options.go"
 	g := gen.NewGeneratedFile(filename, file.GoImportPath)
 
@@ -128,10 +146,8 @@ func generateFile(gen *protogen.Plugin, file *protogen.File) {
 		g.P(")")
 	}
 
-	collisionMap := detectCollisions(file.Messages)
-
 	for _, message := range file.Messages {
-		generateOptionsForMessage(g, message, collisionMap)
+		generateOptionsForMessage(g, message, packageCollisionMap)
 	}
 }
 
