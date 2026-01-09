@@ -88,7 +88,13 @@ func getImports(file *protogen.File) []string {
 func requiresTime(file *protogen.File) bool {
 	for _, message := range file.Messages {
 		for _, field := range message.Fields {
-			if field.Desc.Kind() == protoreflect.MessageKind && field.Message.GoIdent.GoName == "Timestamp" {
+			if field.Desc.Kind() != protoreflect.MessageKind {
+				continue
+			}
+			if field.Message.GoIdent.GoName == "Timestamp" {
+				return true
+			}
+			if field.Message.GoIdent.GoName == "Date" && strings.Contains(field.Message.GoIdent.GoImportPath.String(), "googleapis/type/date") {
 				return true
 			}
 		}
@@ -308,9 +314,22 @@ func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Mess
 			g.P("\t}")
 			g.P("}")
 			return
-		} else {
-			g.P(fmt.Sprintf("func %s(opts ...%s) %s {", optionName, qualifiedIdentForName(g, field.Message.GoIdent, "", "Option"), qualifiedIdentForName(g, message.GoIdent, "", "Option")))
 		}
+		if field.Message.GoIdent.GoName == "Date" && strings.Contains(field.Message.GoIdent.GoImportPath.String(), "googleapis/type/date") {
+			log(g, "field is a googleapis type: date")
+			dateIdent := g.QualifiedGoIdent(field.Message.GoIdent)
+			g.P(fmt.Sprintf("func %s(v time.Time) %s {", optionName, qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+			g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
+			g.P(fmt.Sprintf("\t\tm.%s = &%s{", field.GoName, dateIdent))
+			g.P("\t\t\tYear: int32(v.Year()),")
+			g.P("\t\t\tMonth: int32(v.Month()),")
+			g.P("\t\t\tDay: int32(v.Day()),")
+			g.P("\t\t}")
+			g.P("\t}")
+			g.P("}")
+			return
+		}
+		g.P(fmt.Sprintf("func %s(opts ...%s) %s {", optionName, qualifiedIdentForName(g, field.Message.GoIdent, "", "Option"), qualifiedIdentForName(g, message.GoIdent, "", "Option")))
 	}
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 	if optionless {
