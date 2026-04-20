@@ -17,7 +17,7 @@ func ExampleNewOneofMessage() {
 	// Output: text:"example text"
 }
 
-func ExampleNewOneOfMessage2() {
+func ExampleNewOneofMessage_number() {
 	msg2 := NewOneofMessage(
 		WithNumber(42),
 	)
