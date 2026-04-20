@@ -94,6 +94,9 @@ func requiresTime(file *protogen.File) bool {
 			if field.Message.GoIdent.GoName == "Timestamp" {
 				return true
 			}
+			if field.Message.GoIdent.GoName == "Duration" && wellKnownPath(field.Message.GoIdent) {
+				return true
+			}
 			if field.Message.GoIdent.GoName == "Date" && strings.Contains(field.Message.GoIdent.GoImportPath.String(), "googleapis/type/date") {
 				return true
 			}
@@ -293,9 +296,13 @@ func generateOneOfOptions(g *protogen.GeneratedFile, message *protogen.Message, 
 	}
 }
 
+func wellKnownPath(ident protogen.GoIdent) bool {
+	return strings.Contains(ident.GoImportPath.String(), "protobuf/types/known")
+}
+
 func wellKnown(g *protogen.GeneratedFile, ident protogen.GoIdent) bool {
 	log(g, "checking if well known type: ", ident.GoImportPath.String())
-	return strings.Contains(ident.GoImportPath.String(), "protobuf/types/known")
+	return wellKnownPath(ident)
 }
 
 func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
@@ -325,6 +332,25 @@ func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Mess
 			g.P("\t\t\tMonth: int32(v.Month()),")
 			g.P("\t\t\tDay: int32(v.Day()),")
 			g.P("\t\t}")
+			g.P("\t}")
+			g.P("}")
+			return
+		}
+		if wellKnown(g, field.Message.GoIdent) && field.Message.GoIdent.GoName == "Duration" {
+			log(g, "field is a well known type: duration")
+			g.P(fmt.Sprintf("func %s(v time.Duration) %s {", optionName, qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+			g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
+			g.P(fmt.Sprintf("\t\tm.%s = durationpb.New(v)", field.GoName))
+			g.P("\t}")
+			g.P("}")
+			return
+		}
+		if wellKnown(g, field.Message.GoIdent) && field.Message.GoIdent.GoName == "FieldMask" {
+			log(g, "field is a well known type: fieldmask")
+			fmIdent := g.QualifiedGoIdent(field.Message.GoIdent)
+			g.P(fmt.Sprintf("func %s(paths ...string) %s {", optionName, qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+			g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
+			g.P(fmt.Sprintf("\t\tm.%s = &%s{Paths: paths}", field.GoName, fmIdent))
 			g.P("\t}")
 			g.P("}")
 			return
