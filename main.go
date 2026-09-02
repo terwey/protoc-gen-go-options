@@ -33,42 +33,40 @@ func main() {
 
 // run generates one _options.go file per file the request asks for.
 func run(gen *protogen.Plugin) error {
-	{
-		// Declare support for editions
-		gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_SUPPORTS_EDITIONS)
-		// if you also want to do FEATURE_PROTO3_OPTIONAL you can do the following
-		// gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL | pluginpb.CodeGeneratorResponse_FEATURE_SUPPORTS_EDITIONS)
+	// Declare support for editions
+	gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_SUPPORTS_EDITIONS)
+	// if you also want to do FEATURE_PROTO3_OPTIONAL you can do the following
+	// gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL | pluginpb.CodeGeneratorResponse_FEATURE_SUPPORTS_EDITIONS)
 
-		// this is required to get it to work with editions, need a minimum and maximum edition
-		gen.SupportedEditionsMinimum = descriptorpb.Edition_EDITION_PROTO2
-		gen.SupportedEditionsMaximum = descriptorpb.Edition_EDITION_2023
+	// this is required to get it to work with editions, need a minimum and maximum edition
+	gen.SupportedEditionsMinimum = descriptorpb.Edition_EDITION_PROTO2
+	gen.SupportedEditionsMaximum = descriptorpb.Edition_EDITION_2023
 
-		// Build collision map across all files in the same package
-		packageCollisions := make(map[string]map[string]int)
-		for _, file := range gen.Files {
-			if !file.Generate {
-				continue
-			}
-			pkgName := string(file.GoPackageName)
-			if packageCollisions[pkgName] == nil {
-				packageCollisions[pkgName] = make(map[string]int)
-			}
-			for _, msg := range file.Messages {
-				for _, field := range msg.Fields {
-					packageCollisions[pkgName][field.GoName]++
-				}
+	// Build collision map across all files in the same package
+	packageCollisions := make(map[string]map[string]int)
+	for _, file := range gen.Files {
+		if !file.Generate {
+			continue
+		}
+		pkgName := string(file.GoPackageName)
+		if packageCollisions[pkgName] == nil {
+			packageCollisions[pkgName] = make(map[string]int)
+		}
+		for _, msg := range file.Messages {
+			for _, field := range msg.Fields {
+				packageCollisions[pkgName][field.GoName]++
 			}
 		}
-
-		for _, file := range gen.Files {
-			if !file.Generate {
-				continue
-			}
-			pkgName := string(file.GoPackageName)
-			generateFile(gen, file, packageCollisions[pkgName])
-		}
-		return nil
 	}
+
+	for _, file := range gen.Files {
+		if !file.Generate {
+			continue
+		}
+		pkgName := string(file.GoPackageName)
+		generateFile(gen, file, packageCollisions[pkgName])
+	}
+	return nil
 }
 
 func getImports(file *protogen.File) []string {
@@ -90,19 +88,17 @@ func getImports(file *protogen.File) []string {
 	return imports
 }
 
+// requiresTime reports whether any field gets a constructor taking a time.Time
+// or time.Duration; it and generateNestedFieldOption decide from the same
+// predicates so the import and its use cannot disagree.
 func requiresTime(file *protogen.File) bool {
 	for _, message := range file.Messages {
 		for _, field := range message.Fields {
 			if field.Desc.Kind() != protoreflect.MessageKind {
 				continue
 			}
-			if field.Message.GoIdent.GoName == "Timestamp" {
-				return true
-			}
-			if field.Message.GoIdent.GoName == "Duration" && wellKnownPath(field.Message.GoIdent) {
-				return true
-			}
-			if field.Message.GoIdent.GoName == "Date" && strings.Contains(field.Message.GoIdent.GoImportPath.String(), "googleapis/type/date") {
+			ident := field.Message.GoIdent
+			if isWellKnownTimestamp(ident) || isWellKnownDuration(ident) || isGoogleDate(ident) {
 				return true
 			}
 		}
@@ -305,19 +301,44 @@ func wellKnownPath(ident protogen.GoIdent) bool {
 	return strings.Contains(ident.GoImportPath.String(), "protobuf/types/known")
 }
 
-// isExternalMessage reports whether ident belongs to a package this plugin never
-// generates options for: the protobuf well-known types and the googleapis
-// genproto types (google.type.*, google.rpc.*). No New*/…Option helpers exist
-// there to call, so such a field gets the direct setter only.
-func isExternalMessage(ident protogen.GoIdent) bool {
-	path := ident.GoImportPath.String()
-	return strings.Contains(path, "google.golang.org/genproto/") ||
-		strings.Contains(path, "google.golang.org/protobuf/types/")
+func isWellKnownTimestamp(ident protogen.GoIdent) bool {
+	return wellKnownPath(ident) && ident.GoName == "Timestamp"
 }
 
-func wellKnown(g *protogen.GeneratedFile, ident protogen.GoIdent) bool {
-	log(g, "checking if well known type: ", ident.GoImportPath.String())
-	return wellKnownPath(ident)
+func isWellKnownDuration(ident protogen.GoIdent) bool {
+	return wellKnownPath(ident) && ident.GoName == "Duration"
+}
+
+func isWellKnownFieldMask(ident protogen.GoIdent) bool {
+	return wellKnownPath(ident) && ident.GoName == "FieldMask"
+}
+
+func isGoogleDate(ident protogen.GoIdent) bool {
+	return ident.GoName == "Date" && strings.Contains(ident.GoImportPath.String(), "googleapis/type/date")
+}
+
+// isExternalMessage reports whether ident belongs to a package this plugin does
+// not run over: the protobuf well-known types and the googleapis genproto
+// packages (google.type.*, google.rpc.*). Neither declares a <T>Option type or
+// a New<T>(opts ...<T>Option) constructor, so a WithNew* helper referencing
+// them does not compile. Other external packages are not matched; a proto
+// importing one gets the same broken WithNew* until its path is added here.
+func isExternalMessage(ident protogen.GoIdent) bool {
+	return wellKnownPath(ident) || strings.Contains(ident.GoImportPath.String(), "google.golang.org/genproto/")
+}
+
+// hasOptionHelpers reports whether generateOptionsForMessage declares a
+// <T>Option type and New<T> for message: it must come from a package this plugin
+// runs over, sit at file level (nested messages are never visited), and carry
+// at least one field (a fieldless message is skipped).
+func hasOptionHelpers(message *protogen.Message) bool {
+	if isExternalMessage(message.GoIdent) {
+		return false
+	}
+	if _, nested := message.Desc.Parent().(protoreflect.MessageDescriptor); nested {
+		return false
+	}
+	return len(message.Fields) > 0
 }
 
 func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
@@ -326,7 +347,7 @@ func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Mess
 	doc := fmt.Sprintf("// %s sets the %s field with a new instance.", optionName, field.GoName)
 
 	switch {
-	case wellKnown(g, ident) && ident.GoName == "Timestamp":
+	case isWellKnownTimestamp(ident):
 		log(g, "field is a well known type: timestamp")
 		g.P(doc)
 		g.P(fmt.Sprintf("func %s(v time.Time) %s {", optionName, receiver))
@@ -335,7 +356,7 @@ func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Mess
 		g.P("\t}")
 		g.P("}")
 		return
-	case ident.GoName == "Date" && strings.Contains(ident.GoImportPath.String(), "googleapis/type/date"):
+	case isGoogleDate(ident):
 		log(g, "field is a googleapis type: date")
 		dateIdent := g.QualifiedGoIdent(ident)
 		g.P(doc)
@@ -349,7 +370,7 @@ func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Mess
 		g.P("\t}")
 		g.P("}")
 		return
-	case wellKnown(g, ident) && ident.GoName == "Duration":
+	case isWellKnownDuration(ident):
 		log(g, "field is a well known type: duration")
 		g.P(doc)
 		g.P(fmt.Sprintf("func %s(v time.Duration) %s {", optionName, receiver))
@@ -358,7 +379,7 @@ func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Mess
 		g.P("\t}")
 		g.P("}")
 		return
-	case wellKnown(g, ident) && ident.GoName == "FieldMask":
+	case isWellKnownFieldMask(ident):
 		log(g, "field is a well known type: fieldmask")
 		fmIdent := g.QualifiedGoIdent(ident)
 		g.P(doc)
@@ -371,9 +392,9 @@ func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Mess
 	}
 
 	// The direct setter from generateDirectNestedFieldOption is the whole
-	// surface for a message whose package carries no option helpers.
-	if isExternalMessage(ident) {
-		log(g, "skipping nested option for external message: ", ident.GoName)
+	// surface for a message that has no <T>Option type or New<T> to call.
+	if !hasOptionHelpers(field.Message) {
+		log(g, "skipping nested option, no option helpers for: ", ident.GoName)
 		return
 	}
 
