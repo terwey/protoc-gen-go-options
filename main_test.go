@@ -61,6 +61,8 @@ func fixtureFile() *descriptorpb.FileDescriptorProto {
 		MessageType: []*descriptorpb.DescriptorProto{
 			{Name: proto.String("Inner"), Field: []*descriptorpb.FieldDescriptorProto{bytesField("blob", 1)}},
 			{Name: proto.String("Fieldless")},
+			{Name: proto.String("Product"), Field: []*descriptorpb.FieldDescriptorProto{bytesField("blob", 1)}},
+			{Name: proto.String("ProductOption"), Field: []*descriptorpb.FieldDescriptorProto{bytesField("blob", 1)}},
 			{Name: proto.String("Outer"), NestedType: []*descriptorpb.DescriptorProto{
 				{Name: proto.String("Nested"), Field: []*descriptorpb.FieldDescriptorProto{bytesField("blob", 1)}},
 			}},
@@ -73,6 +75,8 @@ func fixtureFile() *descriptorpb.FileDescriptorProto {
 				messageField("inner", 6, ".fixture.Inner"),
 				messageField("fieldless", 7, ".fixture.Fieldless"),
 				messageField("nested", 8, ".fixture.Outer.Nested"),
+				messageField("product", 9, ".fixture.Product"),
+				messageField("choice", 10, ".fixture.ProductOption"),
 			}},
 		},
 	}
@@ -133,6 +137,10 @@ func TestNestedOptionHelpersMatchWhatExists(t *testing.T) {
 		"func WithFailure(value *status.Status) DayOption",
 		"func WithFieldless(value *Fieldless) DayOption",
 		"func WithNested(value *Outer_Nested) DayOption",
+		"type ProductOptionFunc func(*Product)",
+		"type ProductOptionOption func(*ProductOption)",
+		"func WithNewProductForDay(opts ...ProductOptionFunc) DayOption",
+		"func WithNewChoiceForDay(opts ...ProductOptionOption) DayOption",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("missing %q\n%s", want, src)
