@@ -12,6 +12,11 @@ import (
 
 var logEnabled = false
 
+// declaredNames holds, per Go import path, the type names protoc-gen-go
+// declares for every message and enum of the request, so an option type name
+// that one of them already takes is never declared again.
+var declaredNames = map[protogen.GoImportPath]map[string]bool{}
+
 type OptionFlag string
 
 const (
@@ -42,6 +47,11 @@ func run(gen *protogen.Plugin) error {
 	gen.SupportedEditionsMinimum = descriptorpb.Edition_EDITION_PROTO2
 	gen.SupportedEditionsMaximum = descriptorpb.Edition_EDITION_2023
 
+	declaredNames = map[protogen.GoImportPath]map[string]bool{}
+	for _, file := range gen.Files {
+		recordDeclaredNames(file.GoImportPath, file.Messages, file.Enums)
+	}
+
 	// Build collision map across all files in the same package
 	packageCollisions := make(map[string]map[string]int)
 	for _, file := range gen.Files {
@@ -67,6 +77,32 @@ func run(gen *protogen.Plugin) error {
 		generateFile(gen, file, packageCollisions[pkgName])
 	}
 	return nil
+}
+
+// recordDeclaredNames adds the Go type names of messages and enums, nested ones
+// included, to declaredNames under path.
+func recordDeclaredNames(path protogen.GoImportPath, messages []*protogen.Message, enums []*protogen.Enum) {
+	if declaredNames[path] == nil {
+		declaredNames[path] = map[string]bool{}
+	}
+	for _, enum := range enums {
+		declaredNames[path][enum.GoIdent.GoName] = true
+	}
+	for _, message := range messages {
+		declaredNames[path][message.GoIdent.GoName] = true
+		recordDeclaredNames(path, message.Messages, message.Enums)
+	}
+}
+
+// optionTypeName returns the name of the functional option type for the
+// message ident names: <T>Option, or <T>OptionFunc where protoc-gen-go already
+// declares <T>Option, as for messages Product and ProductOption in one package.
+func optionTypeName(ident protogen.GoIdent) string {
+	name := ident.GoName + "Option"
+	if declaredNames[ident.GoImportPath][name] {
+		return ident.GoName + "OptionFunc"
+	}
+	return name
 }
 
 func getImports(file *protogen.File) []string {
@@ -195,14 +231,14 @@ func generateOptionsForMessage(g *protogen.GeneratedFile, message *protogen.Mess
 	log(g, "generating options for message: ", message.GoIdent.GoName)
 
 	// Declare the Option interface for this message
-	g.P(fmt.Sprintf("// %sOption defines a functional option for %s.", message.GoIdent.GoName, message.GoIdent.GoName))
-	g.P(fmt.Sprintf("type %sOption func(*%s)", message.GoIdent.GoName, message.GoIdent.GoName))
+	g.P(fmt.Sprintf("// %s defines a functional option for %s.", optionTypeName(message.GoIdent), message.GoIdent.GoName))
+	g.P(fmt.Sprintf("type %s func(*%s)", optionTypeName(message.GoIdent), message.GoIdent.GoName))
 	g.P()
 
 	if !optionFlagForMessage(message, GO_OPTIONS_SKIP_INIT) {
 		constructorName := fmt.Sprintf("New%s", message.GoIdent.GoName)
 		g.P(fmt.Sprintf("// %s creates a new %s.", constructorName, message.GoIdent.GoName))
-		g.P(fmt.Sprintf("func %s(opts ...%s) *%s {", constructorName, qualifiedIdentForName(g, message.GoIdent, "", "Option"), message.GoIdent.GoName))
+		g.P(fmt.Sprintf("func %s(opts ...%s) *%s {", constructorName, qualifiedOptionType(g, message.GoIdent), message.GoIdent.GoName))
 		g.P(fmt.Sprintf("\tm := &%s{}", message.GoIdent.GoName))
 		g.P("\tfor _, opt := range opts {")
 		g.P("\t\topt(m)")
@@ -216,7 +252,7 @@ func generateOptionsForMessage(g *protogen.GeneratedFile, message *protogen.Mess
 		// Generate ApplyMessageOptions function
 		applyName := fmt.Sprintf("Apply%sOptions", message.GoIdent.GoName)
 		g.P(fmt.Sprintf("// %s applies the provided options to an existing %s.", applyName, message.GoIdent.GoName))
-		g.P(fmt.Sprintf("func %s(m *%s, opts ...%s) *%s {", applyName, message.GoIdent.GoName, qualifiedIdentForName(g, message.GoIdent, "", "Option"), g.QualifiedGoIdent(message.GoIdent)))
+		g.P(fmt.Sprintf("func %s(m *%s, opts ...%s) *%s {", applyName, message.GoIdent.GoName, qualifiedOptionType(g, message.GoIdent), g.QualifiedGoIdent(message.GoIdent)))
 		g.P("\tfor _, opt := range opts {")
 		g.P("\t\topt(m)")
 		g.P("\t}")
@@ -276,10 +312,10 @@ func generateOneOfOptions(g *protogen.GeneratedFile, message *protogen.Message, 
 			g.P(fmt.Sprintf("// %s sets the %s oneof field to %s.", optionName, oneof.GoName, field.GoName))
 			if field.Desc.IsList() {
 				log(g, "oneof field is a list")
-				g.P(fmt.Sprintf("func %s(value ...%s) %s {", optionName, determineFieldType(g, field), qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+				g.P(fmt.Sprintf("func %s(value ...%s) %s {", optionName, determineFieldType(g, field), qualifiedOptionType(g, message.GoIdent)))
 			} else {
 				log(g, "oneof field is not a list")
-				g.P(fmt.Sprintf("func %s(value %s) %s {", optionName, determineFieldType(g, field), qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+				g.P(fmt.Sprintf("func %s(value %s) %s {", optionName, determineFieldType(g, field), qualifiedOptionType(g, message.GoIdent)))
 			}
 			g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 			// Assign the wrapper struct for oneof fields
@@ -343,7 +379,7 @@ func hasOptionHelpers(message *protogen.Message) bool {
 
 func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
 	ident := field.Message.GoIdent
-	receiver := qualifiedIdentForName(g, message.GoIdent, "", "Option")
+	receiver := qualifiedOptionType(g, message.GoIdent)
 	doc := fmt.Sprintf("// %s sets the %s field with a new instance.", optionName, field.GoName)
 
 	switch {
@@ -404,7 +440,7 @@ func generateNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Mess
 	if optionless {
 		g.P(fmt.Sprintf("func %s() %s {", optionName, receiver))
 	} else {
-		g.P(fmt.Sprintf("func %s(opts ...%s) %s {", optionName, qualifiedIdentForName(g, ident, "", "Option"), receiver))
+		g.P(fmt.Sprintf("func %s(opts ...%s) %s {", optionName, qualifiedOptionType(g, ident), receiver))
 	}
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 	if optionless {
@@ -425,10 +461,16 @@ func qualifiedIdentForName(g *protogen.GeneratedFile, ident protogen.GoIdent, pr
 	return g.QualifiedGoIdent(ident.GoImportPath.Ident(prefix + ident.GoName + suffix))
 }
 
+// qualifiedOptionType returns the functional option type of the message ident
+// names, qualified for g.
+func qualifiedOptionType(g *protogen.GeneratedFile, ident protogen.GoIdent) string {
+	return g.QualifiedGoIdent(ident.GoImportPath.Ident(optionTypeName(ident)))
+}
+
 func generateDirectNestedFieldOption(g *protogen.GeneratedFile, message *protogen.Message, field *protogen.Field, optionName string) {
 	log(g, "generating direct nested field option for message: ", message.GoIdent.GoName)
 	g.P(fmt.Sprintf("// %s sets the %s field directly.", optionName, field.GoName))
-	g.P(fmt.Sprintf("func %s(value *%s) %s {", optionName, g.QualifiedGoIdent(field.Message.GoIdent), qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+	g.P(fmt.Sprintf("func %s(value *%s) %s {", optionName, g.QualifiedGoIdent(field.Message.GoIdent), qualifiedOptionType(g, message.GoIdent)))
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\t\tm.%s = value", field.GoName))
 	g.P("\t}")
@@ -442,13 +484,13 @@ func generateScalarFieldOption(g *protogen.GeneratedFile, message *protogen.Mess
 	g.P(fmt.Sprintf("// %s sets the %s field.", optionName, field.GoName))
 	if field.Desc.IsList() {
 		log(g, "field is a list")
-		g.P(fmt.Sprintf("func %s(value ...%s) %s {", optionName, fieldType, qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+		g.P(fmt.Sprintf("func %s(value ...%s) %s {", optionName, fieldType, qualifiedOptionType(g, message.GoIdent)))
 	} else if field.Desc.Kind() == protoreflect.EnumKind {
 		log(g, "field is an enum")
-		g.P(fmt.Sprintf("func %s(value *%s) %s {", optionName, fieldType, qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+		g.P(fmt.Sprintf("func %s(value *%s) %s {", optionName, fieldType, qualifiedOptionType(g, message.GoIdent)))
 	} else {
 		log(g, "field is not a list")
-		g.P(fmt.Sprintf("func %s(value %s) %s {", optionName, fieldType, qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+		g.P(fmt.Sprintf("func %s(value %s) %s {", optionName, fieldType, qualifiedOptionType(g, message.GoIdent)))
 	}
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", g.QualifiedGoIdent(message.GoIdent)))
 	if field.Desc.IsList() {
@@ -473,7 +515,7 @@ func generateRepeatedFieldOption(g *protogen.GeneratedFile, message *protogen.Me
 	log(g, "generating repeated field option for message: ", message.GoIdent.GoName)
 	elementType := determineFieldType(g, field)
 	g.P(fmt.Sprintf("// %s sets the %s field.", optionName, field.GoName))
-	g.P(fmt.Sprintf("func %s(values ...%s) %s {", optionName, elementType, qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+	g.P(fmt.Sprintf("func %s(values ...%s) %s {", optionName, elementType, qualifiedOptionType(g, message.GoIdent)))
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\t\tm.%s = values", field.GoName))
 	g.P("\t}")
@@ -486,7 +528,7 @@ func generateMapFieldOption(g *protogen.GeneratedFile, message *protogen.Message
 	keyType := determineFieldType(g, field.Message.Fields[0])
 	valueType := determineFieldType(g, field.Message.Fields[1])
 	g.P(fmt.Sprintf("// %s sets the %s field.", optionName, field.GoName))
-	g.P(fmt.Sprintf("func %s(value map[%s]%s) %s {", optionName, keyType, valueType, qualifiedIdentForName(g, message.GoIdent, "", "Option")))
+	g.P(fmt.Sprintf("func %s(value map[%s]%s) %s {", optionName, keyType, valueType, qualifiedOptionType(g, message.GoIdent)))
 	g.P(fmt.Sprintf("\treturn func(m *%s) {", message.GoIdent.GoName))
 	g.P(fmt.Sprintf("\t\tm.%s = value", field.GoName))
 	g.P("\t}")
