@@ -52,6 +52,13 @@ func run(gen *protogen.Plugin) error {
 		recordDeclaredNames(file.GoImportPath, file.Messages, file.Enums)
 	}
 
+	generatedModules = map[string]bool{}
+	for _, file := range gen.Files {
+		if file.Generate {
+			generatedModules[moduleRoot(file.GoImportPath)] = true
+		}
+	}
+
 	// Build collision map across all files in the same package
 	packageCollisions := make(map[string]map[string]int)
 	for _, file := range gen.Files {
@@ -353,14 +360,29 @@ func isGoogleDate(ident protogen.GoIdent) bool {
 	return ident.GoName == "Date" && strings.Contains(ident.GoImportPath.String(), "googleapis/type/date")
 }
 
-// isExternalMessage reports whether ident belongs to a package this plugin does
-// not run over: the protobuf well-known types and the googleapis genproto
-// packages (google.type.*, google.rpc.*). Neither declares a <T>Option type or
-// a New<T>(opts ...<T>Option) constructor, so a WithNew* helper referencing
-// them does not compile. Other external packages are not matched; a proto
-// importing one gets the same broken WithNew* until its path is added here.
+// generatedModules holds the module root (moduleRoot) of every file the current
+// run generates. buf invokes the plugin once per directory, so a message from
+// another directory of the same module is not generated in this run but still
+// gets its <T>Option type and New<T> in its own.
+var generatedModules = map[string]bool{}
+
+// moduleRoot returns the first three elements of a Go import path, such as
+// github.com/gastova/sdk-go.
+func moduleRoot(importPath protogen.GoImportPath) string {
+	parts := strings.SplitN(strings.Trim(string(importPath), `"`), "/", 4)
+	if len(parts) > 3 {
+		parts = parts[:3]
+	}
+	return strings.Join(parts, "/")
+}
+
+// isExternalMessage reports whether ident belongs to a module this plugin does
+// not generate for: protobuf's well-known types, googleapis (google.type.*,
+// google.rpc.*), cloud.google.com/go (google.longrunning.*) or any other. None
+// declares a <T>Option type or New<T>(opts ...<T>Option), so a WithNew* helper
+// referencing one does not compile.
 func isExternalMessage(ident protogen.GoIdent) bool {
-	return wellKnownPath(ident) || strings.Contains(ident.GoImportPath.String(), "google.golang.org/genproto/")
+	return !generatedModules[moduleRoot(ident.GoImportPath)]
 }
 
 // hasOptionHelpers reports whether generateOptionsForMessage declares a

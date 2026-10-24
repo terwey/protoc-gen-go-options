@@ -7,12 +7,14 @@ import (
 	"strings"
 	"testing"
 
+	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/genproto/googleapis/type/date"
 	"google.golang.org/protobuf/cmd/protoc-gen-go/internal_gengo"
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -56,6 +58,7 @@ func fixtureFile() *descriptorpb.FileDescriptorProto {
 			"google/protobuf/timestamp.proto",
 			"google/protobuf/duration.proto",
 			"google/protobuf/field_mask.proto",
+			"google/longrunning/operations.proto",
 		},
 		Options: &descriptorpb.FileOptions{GoPackage: proto.String("github.com/terwey/protoc-gen-go-options/compiletest/fixture;fixture")},
 		MessageType: []*descriptorpb.DescriptorProto{
@@ -77,9 +80,33 @@ func fixtureFile() *descriptorpb.FileDescriptorProto {
 				messageField("nested", 8, ".fixture.Outer.Nested"),
 				messageField("product", 9, ".fixture.Product"),
 				messageField("choice", 10, ".fixture.ProductOption"),
+				messageField("job", 11, ".google.longrunning.Operation"),
 			}},
 		},
 	}
+}
+
+// withImports returns the descriptors of files and every file they import,
+// each after its imports, as a CodeGeneratorRequest lists them.
+func withImports(files ...protoreflect.FileDescriptor) []*descriptorpb.FileDescriptorProto {
+	var out []*descriptorpb.FileDescriptorProto
+	seen := map[string]bool{}
+	var add func(protoreflect.FileDescriptor)
+	add = func(fd protoreflect.FileDescriptor) {
+		if seen[fd.Path()] {
+			return
+		}
+		seen[fd.Path()] = true
+		imports := fd.Imports()
+		for i := range imports.Len() {
+			add(imports.Get(i).FileDescriptor)
+		}
+		out = append(out, protodesc.ToFileDescriptorProto(fd))
+	}
+	for _, fd := range files {
+		add(fd)
+	}
+	return out
 }
 
 // generateFixture runs protoc-gen-go and this plugin over fixtureFile and
@@ -89,15 +116,15 @@ func generateFixture(t *testing.T) map[string]string {
 	req := &pluginpb.CodeGeneratorRequest{
 		FileToGenerate: []string{"fixture/day.proto"},
 		Parameter:      proto.String("paths=source_relative"),
-		ProtoFile: []*descriptorpb.FileDescriptorProto{
-			protodesc.ToFileDescriptorProto(anypb.File_google_protobuf_any_proto),
-			protodesc.ToFileDescriptorProto(status.File_google_rpc_status_proto),
-			protodesc.ToFileDescriptorProto(date.File_google_type_date_proto),
-			protodesc.ToFileDescriptorProto(timestamppb.File_google_protobuf_timestamp_proto),
-			protodesc.ToFileDescriptorProto(durationpb.File_google_protobuf_duration_proto),
-			protodesc.ToFileDescriptorProto(fieldmaskpb.File_google_protobuf_field_mask_proto),
-			fixtureFile(),
-		},
+		ProtoFile: append(withImports(
+			anypb.File_google_protobuf_any_proto,
+			status.File_google_rpc_status_proto,
+			date.File_google_type_date_proto,
+			timestamppb.File_google_protobuf_timestamp_proto,
+			durationpb.File_google_protobuf_duration_proto,
+			fieldmaskpb.File_google_protobuf_field_mask_proto,
+			longrunningpb.File_google_longrunning_operations_proto,
+		), fixtureFile()),
 	}
 	gen, err := protogen.Options{}.New(req)
 	if err != nil {
@@ -141,12 +168,13 @@ func TestNestedOptionHelpersMatchWhatExists(t *testing.T) {
 		"type ProductOptionOption func(*ProductOption)",
 		"func WithNewProductForDay(opts ...ProductOptionFunc) DayOption",
 		"func WithNewChoiceForDay(opts ...ProductOptionOption) DayOption",
+		"func WithJob(value *longrunningpb.Operation) DayOption",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("missing %q\n%s", want, src)
 		}
 	}
-	for _, reject := range []string{"StatusOption", "WithNewFailureForDay", "WithNewFieldlessForDay", "WithNewNestedForDay"} {
+	for _, reject := range []string{"StatusOption", "WithNewFailureForDay", "WithNewFieldlessForDay", "WithNewNestedForDay", "OperationOption", "WithNewJobForDay"} {
 		if strings.Contains(src, reject) {
 			t.Errorf("emitted %q, which has no declaration to call\n%s", reject, src)
 		}
