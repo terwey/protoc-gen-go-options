@@ -31,7 +31,7 @@ func main() {
 
 // pluginOptions reads the plugin's own parameters. options_module=<path> names
 // the Go module whose packages carry generated option helpers, such as
-// options_module=github.com/gastova/sdk-go.
+// options_module=example.com/sdk.
 func pluginOptions() protogen.Options {
 	return protogen.Options{
 		ParamFunc: func(name, value string) error {
@@ -377,7 +377,7 @@ var optionsModule string
 var generatedModules = map[string]bool{}
 
 // moduleRoot returns the first three elements of a Go import path, such as
-// github.com/gastova/sdk-go. It is a guess: a module whose root has two
+// github.com/owner/repo. It is a guess: a module whose root has two
 // elements, or modules sharing three, need options_module.
 func moduleRoot(importPath protogen.GoImportPath) string {
 	parts := strings.SplitN(string(importPath), "/", 4)

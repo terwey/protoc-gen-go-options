@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"cloud.google.com/go/longrunning/autogen/longrunningpb"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/genproto/googleapis/type/date"
 	"google.golang.org/protobuf/cmd/protoc-gen-go/internal_gengo"
@@ -57,7 +56,6 @@ func fixtureFile() *descriptorpb.FileDescriptorProto {
 			"google/protobuf/timestamp.proto",
 			"google/protobuf/duration.proto",
 			"google/protobuf/field_mask.proto",
-			"google/longrunning/operations.proto",
 			"other/thing.proto",
 		},
 		Options: &descriptorpb.FileOptions{GoPackage: proto.String("github.com/terwey/protoc-gen-go-options/compiletest/fixture;fixture")},
@@ -80,7 +78,6 @@ func fixtureFile() *descriptorpb.FileDescriptorProto {
 				messageField("nested", 8, ".fixture.Outer.Nested"),
 				messageField("product", 9, ".fixture.Product"),
 				messageField("choice", 10, ".fixture.ProductOption"),
-				messageField("job", 11, ".google.longrunning.Operation"),
 				messageField("thing", 12, ".other.Thing"),
 			}},
 		},
@@ -97,6 +94,35 @@ func otherFile() *descriptorpb.FileDescriptorProto {
 		Options: &descriptorpb.FileOptions{GoPackage: proto.String("github.com/terwey/protoc-gen-go-options/compiletest/other;other")},
 		MessageType: []*descriptorpb.DescriptorProto{
 			{Name: proto.String("Thing"), Field: []*descriptorpb.FieldDescriptorProto{bytesField("blob", 1)}},
+		},
+	}
+}
+
+// extFile is a message of a module this plugin never generates for, outside
+// both the well-known types and genproto.
+func extFile() *descriptorpb.FileDescriptorProto {
+	return &descriptorpb.FileDescriptorProto{
+		Name:    proto.String("ext/thing.proto"),
+		Package: proto.String("ext"),
+		Syntax:  proto.String("proto2"),
+		Options: &descriptorpb.FileOptions{GoPackage: proto.String("example.com/ext;ext")},
+		MessageType: []*descriptorpb.DescriptorProto{
+			{Name: proto.String("Thing"), Field: []*descriptorpb.FieldDescriptorProto{bytesField("blob", 1)}},
+		},
+	}
+}
+
+// foreignFile uses extFile's message. It is generated and checked as text only:
+// example.com/ext has no Go package to compile against.
+func foreignFile() *descriptorpb.FileDescriptorProto {
+	return &descriptorpb.FileDescriptorProto{
+		Name:       proto.String("foreign/use.proto"),
+		Package:    proto.String("foreign"),
+		Syntax:     proto.String("proto2"),
+		Dependency: []string{"ext/thing.proto"},
+		Options:    &descriptorpb.FileOptions{GoPackage: proto.String("github.com/terwey/protoc-gen-go-options/compiletest/foreign;foreign")},
+		MessageType: []*descriptorpb.DescriptorProto{
+			{Name: proto.String("Use"), Field: []*descriptorpb.FieldDescriptorProto{messageField("thing", 1, ".ext.Thing")}},
 		},
 	}
 }
@@ -137,8 +163,7 @@ func generate(t *testing.T, file, parameter string) map[string]string {
 		timestamppb.File_google_protobuf_timestamp_proto,
 		durationpb.File_google_protobuf_duration_proto,
 		fieldmaskpb.File_google_protobuf_field_mask_proto,
-		longrunningpb.File_google_longrunning_operations_proto,
-	), otherFile(), fixtureFile())
+	), otherFile(), fixtureFile(), extFile(), foreignFile())
 	req := &pluginpb.CodeGeneratorRequest{
 		FileToGenerate: []string{file},
 		Parameter:      proto.String(parameter),
@@ -193,16 +218,28 @@ func TestNestedOptionHelpersMatchWhatExists(t *testing.T) {
 		"type ProductOptionOption func(*ProductOption)",
 		"func WithNewProductForDay(opts ...ProductOptionFunc) DayOption",
 		"func WithNewChoiceForDay(opts ...ProductOptionOption) DayOption",
-		"func WithJob(value *longrunningpb.Operation) DayOption",
 		"func WithNewThingForDay(opts ...other.ThingOption) DayOption",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("missing %q\n%s", want, src)
 		}
 	}
-	for _, reject := range []string{"StatusOption", "WithNewFailureForDay", "WithNewFieldlessForDay", "WithNewNestedForDay", "OperationOption", "WithNewJobForDay"} {
+	for _, reject := range []string{"StatusOption", "WithNewFailureForDay", "WithNewFieldlessForDay", "WithNewNestedForDay"} {
 		if strings.Contains(src, reject) {
 			t.Errorf("emitted %q, which has no declaration to call\n%s", reject, src)
+		}
+	}
+}
+
+func TestForeignModuleGetsSetterOnly(t *testing.T) {
+	src := generate(t, "foreign/use.proto", "paths=source_relative")["use_options.go"]
+
+	if !strings.Contains(src, "func WithThing(value *ext.Thing) UseOption") {
+		t.Errorf("missing the direct setter for a foreign message\n%s", src)
+	}
+	for _, reject := range []string{"ThingOption", "WithNewThingForUse"} {
+		if strings.Contains(src, reject) {
+			t.Errorf("emitted %q, which example.com/ext does not declare\n%s", reject, src)
 		}
 	}
 }
