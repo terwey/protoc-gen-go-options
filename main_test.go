@@ -11,7 +11,6 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/genproto/googleapis/type/date"
 	"google.golang.org/protobuf/cmd/protoc-gen-go/internal_gengo"
-	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -59,6 +58,7 @@ func fixtureFile() *descriptorpb.FileDescriptorProto {
 			"google/protobuf/duration.proto",
 			"google/protobuf/field_mask.proto",
 			"google/longrunning/operations.proto",
+			"other/thing.proto",
 		},
 		Options: &descriptorpb.FileOptions{GoPackage: proto.String("github.com/terwey/protoc-gen-go-options/compiletest/fixture;fixture")},
 		MessageType: []*descriptorpb.DescriptorProto{
@@ -81,7 +81,22 @@ func fixtureFile() *descriptorpb.FileDescriptorProto {
 				messageField("product", 9, ".fixture.Product"),
 				messageField("choice", 10, ".fixture.ProductOption"),
 				messageField("job", 11, ".google.longrunning.Operation"),
+				messageField("thing", 12, ".other.Thing"),
 			}},
+		},
+	}
+}
+
+// otherFile is a sibling package of the same Go module, generated in a run of
+// its own as buf's per-directory strategy does.
+func otherFile() *descriptorpb.FileDescriptorProto {
+	return &descriptorpb.FileDescriptorProto{
+		Name:    proto.String("other/thing.proto"),
+		Package: proto.String("other"),
+		Syntax:  proto.String("proto2"),
+		Options: &descriptorpb.FileOptions{GoPackage: proto.String("github.com/terwey/protoc-gen-go-options/compiletest/other;other")},
+		MessageType: []*descriptorpb.DescriptorProto{
+			{Name: proto.String("Thing"), Field: []*descriptorpb.FieldDescriptorProto{bytesField("blob", 1)}},
 		},
 	}
 }
@@ -109,24 +124,27 @@ func withImports(files ...protoreflect.FileDescriptor) []*descriptorpb.FileDescr
 	return out
 }
 
-// generateFixture runs protoc-gen-go and this plugin over fixtureFile and
-// returns the generated sources by file name.
-func generateFixture(t *testing.T) map[string]string {
+// generate runs protoc-gen-go and this plugin over the named file of the
+// fixture set, with the given plugin parameter, and returns the generated
+// sources by file name.
+func generate(t *testing.T, file, parameter string) map[string]string {
 	t.Helper()
+	t.Cleanup(func() { optionsModule = "" })
+	protoFiles := append(withImports(
+		anypb.File_google_protobuf_any_proto,
+		status.File_google_rpc_status_proto,
+		date.File_google_type_date_proto,
+		timestamppb.File_google_protobuf_timestamp_proto,
+		durationpb.File_google_protobuf_duration_proto,
+		fieldmaskpb.File_google_protobuf_field_mask_proto,
+		longrunningpb.File_google_longrunning_operations_proto,
+	), otherFile(), fixtureFile())
 	req := &pluginpb.CodeGeneratorRequest{
-		FileToGenerate: []string{"fixture/day.proto"},
-		Parameter:      proto.String("paths=source_relative"),
-		ProtoFile: append(withImports(
-			anypb.File_google_protobuf_any_proto,
-			status.File_google_rpc_status_proto,
-			date.File_google_type_date_proto,
-			timestamppb.File_google_protobuf_timestamp_proto,
-			durationpb.File_google_protobuf_duration_proto,
-			fieldmaskpb.File_google_protobuf_field_mask_proto,
-			longrunningpb.File_google_longrunning_operations_proto,
-		), fixtureFile()),
+		FileToGenerate: []string{file},
+		Parameter:      proto.String(parameter),
+		ProtoFile:      protoFiles,
 	}
-	gen, err := protogen.Options{}.New(req)
+	gen, err := pluginOptions().New(req)
 	if err != nil {
 		t.Fatalf("new plugin: %v", err)
 	}
@@ -146,8 +164,15 @@ func generateFixture(t *testing.T) map[string]string {
 	for _, f := range resp.File {
 		out[filepath.Base(f.GetName())] = f.GetContent()
 	}
+	return out
+}
+
+// generateFixture generates fixture/day.proto with no plugin parameter of its own.
+func generateFixture(t *testing.T) map[string]string {
+	t.Helper()
+	out := generate(t, "fixture/day.proto", "paths=source_relative")
 	if _, ok := out["day_options.go"]; !ok {
-		t.Fatalf("no day_options.go in response: %v", resp.File)
+		t.Fatalf("no day_options.go in response")
 	}
 	return out
 }
@@ -169,6 +194,7 @@ func TestNestedOptionHelpersMatchWhatExists(t *testing.T) {
 		"func WithNewProductForDay(opts ...ProductOptionFunc) DayOption",
 		"func WithNewChoiceForDay(opts ...ProductOptionOption) DayOption",
 		"func WithJob(value *longrunningpb.Operation) DayOption",
+		"func WithNewThingForDay(opts ...other.ThingOption) DayOption",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("missing %q\n%s", want, src)
@@ -181,28 +207,42 @@ func TestNestedOptionHelpersMatchWhatExists(t *testing.T) {
 	}
 }
 
+func TestOptionsModuleBoundsWhatCountsAsOurs(t *testing.T) {
+	src := generate(t, "fixture/day.proto",
+		"paths=source_relative,options_module=github.com/terwey/protoc-gen-go-options/compiletest/fixture")["day_options.go"]
+
+	if strings.Contains(src, "WithNewThingForDay") {
+		t.Errorf("emitted WithNewThingForDay for a package outside options_module\n%s", src)
+	}
+	if !strings.Contains(src, "func WithNewInnerForDay(opts ...InnerOption) DayOption") {
+		t.Errorf("dropped WithNewInnerForDay inside options_module\n%s", src)
+	}
+}
+
 // The generated options must type-check against protoc-gen-go's output for the
 // same file; string checks cannot see a reference to a symbol that does not
 // exist.
 func TestGeneratedOptionsCompile(t *testing.T) {
-	files := generateFixture(t)
-	dir, err := os.MkdirTemp(".", "compiletest-")
-	if err != nil {
-		t.Fatal(err)
+	packages := map[string]map[string]string{
+		"fixture": generateFixture(t),
+		"other":   generate(t, "other/thing.proto", "paths=source_relative"),
 	}
-	pkgDir := filepath.Join(dir, "fixture")
-	if err := os.MkdirAll(pkgDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for name, content := range files {
-		if err := os.WriteFile(filepath.Join(pkgDir, name), []byte(content), 0o644); err != nil {
+	// The directory matches the fixtures' go_package, so fixture imports other.
+	dir := "compiletest"
+	for pkg, files := range packages {
+		pkgDir := filepath.Join(dir, pkg)
+		if err := os.MkdirAll(pkgDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
+		for name, content := range files {
+			if err := os.WriteFile(filepath.Join(pkgDir, name), []byte(content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
-	cmd := exec.Command("go", "build", "./"+pkgDir)
-	out, err := cmd.CombinedOutput()
+	out, err := exec.Command("go", "build", "./"+dir+"/...").CombinedOutput()
 	if err != nil {
-		t.Fatalf("generated package does not compile (kept in %s):\n%s", dir, out)
+		t.Fatalf("generated packages do not compile (kept in %s):\n%s", dir, out)
 	}
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
